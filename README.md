@@ -92,3 +92,14 @@ node runner-tests.mjs
 Load this repository folder as an unpacked Chrome extension. After pulling updates, click Reload in chrome://extensions and reopen the dashboard. Keep the same installed extension and folder to retain downloaded post history.
 
 Commit source files only. Downloaded models, progress reports, and account credentials do not belong in the repository.
+
+## Import manifest (v1.0.5)
+After each run, including stopped or partially failed runs, the extension downloads `patreon-download-manifest.json` into the selected designer folder. It replaces the previous manifest in that folder, rebuilding it from all retained download history for that folder. The **Save import manifest** button exports existing history without scanning or downloading models. Export manifests before uninstalling or clearing extension storage.
+
+Schema version 1 records provider, designer folder, post ID/title/public URL, known source URLs, completion date/status, and each model's attachment identity, original name, relative filename, status, and matching completed image filename. Multiple 3MFs share the post's main image. No signed URLs or absolute computer paths are exported. Designer folder is a label, not a 3DHub designer database ID.
+
+New model downloads record the numeric `m` identifier from Patreon's file URL as an attachment ID. Existing history lacks that value and exports an explicitly labeled original-filename fallback; it is not equivalent to a verified attachment ID. Previously completed files remain skipped, so generating a manifest does not upgrade those old identities. Duplicate original names may need manual reconciliation in the future importer.
+
+The manifest is import metadata; **3DHub does not read it yet**. Its future importer should consume only completed resources and distinguish incomplete posts. Model/image filenames are relative to the manifest's folder, including Chrome's final collision-renamed filenames. History for already moved/imported files is deliberately retained; a missing file should be handled by the importer. Existing history with no saved source URL exports an empty source list unless rescanned.
+
+Run `node manifest-tests.mjs` alongside the existing offline checks. Automatic export happens at run end; if the dashboard/Chrome closes abruptly, use Save import manifest after reopening to refresh the file. Manifest saving errors are reported separately in the dashboard.

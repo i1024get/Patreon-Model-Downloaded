@@ -1,8 +1,9 @@
+import {exportManifest} from './download-manifest.mjs';
 import {Runner} from './runner.mjs';import {safeName,sourceId} from './core.mjs';
 const $=id=>document.getElementById(id);let runner=null,running=false;
 function log(message,type='info'){const row=document.createElement('div');row.className=type;row.textContent=message;$('log').append(row);while($('log').children.length>100)$('log').firstChild.remove();$('log').scrollTop=$('log').scrollHeight;$('status').textContent=message}
 async function render(){const {history}=await chrome.storage.local.get('history');const entries=Object.entries(history?.posts||{});$('results').replaceChildren();for(const [id,item] of entries){const tr=document.createElement('tr');const first=document.createElement('td');const a=document.createElement('a');a.href='https://www.patreon.com/posts/'+id;a.target='_blank';a.rel='noopener';a.textContent=item.title||id;first.append(a);tr.append(first);for(const text of [item.status,item.resources?.length||0,item.error||'']){const td=document.createElement('td');td.textContent=text;tr.append(td)}$('results').append(tr)}const completed=entries.filter(([,x])=>x.status==='complete').length;$('summary').textContent=entries.length?`${completed} completed posts · ${entries.length} posts recorded. Incomplete posts are retried when you resume.`:'Sign in to Patreon in your regular Chrome, then start here.'}
-function setBusy(value){running=value;$('start').disabled=value;$('stop').disabled=!value;$('collection').disabled=value;$('folder').disabled=value;$('trial').disabled=value}
+function setBusy(value){running=value;$('start').disabled=value;$('stop').disabled=!value;$('collection').disabled=value;$('folder').disabled=value;$('trial').disabled=value;$('manifest').disabled=value}
 $('stop').addEventListener('click',()=>{if(runner){runner.stop=true;log('Stopping after the current file. Progress will be retained.')}});
 $('start').addEventListener('click',async()=>{
  if(running)return;
@@ -24,3 +25,5 @@ $('report').addEventListener('click',async()=>{const {history}=await chrome.stor
 chrome.storage.onChanged.addListener(changes=>{if(changes.history)render()});
 window.addEventListener('beforeunload',event=>{if(running){event.preventDefault();event.returnValue=''}});
 render();
+
+$('manifest').addEventListener('click',async()=>{const folder=$('folder').value.trim();if(!folder||folder!==safeName(folder)||folder.includes('..')){log('Enter a simple designer folder name.','error');return}try{const {history}=await chrome.storage.local.get('history');await exportManifest(chrome,history||{posts:{}},folder);log('Saved '+folder+'/patreon-download-manifest.json')}catch(error){log(error.message,'error')}});

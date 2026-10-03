@@ -1,3 +1,4 @@
+import {exportManifest} from './download-manifest.mjs';
 import {postId,downloadResources,resourceComplete,inspectPage} from './core.mjs';
 export class Runner{
  constructor(api,notify=()=>{},sleep=ms=>new Promise(r=>setTimeout(r,ms))){this.api=api;this.notify=notify;this.sleep=sleep;this.stop=false;this.history={version:1,posts:{}};this.worker=null;this.preserveWorker=false}
@@ -103,23 +104,23 @@ export class Runner{
     this.assertRunning();if(limit&&index>=limit)break;
     const post=posts[index];let entry=this.history.posts[post.id];
     this.notify(`${index+1} / ${posts.length}: post ${post.id}`);
-    if(await this.postComplete(entry)){stats.skipped++;continue}
+    if(await this.postComplete(entry)){entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];await this.save();stats.skipped++;continue}
     try{
      const data=await this.openPost(post.url);
      if(data.locked&&!data.files.length)throw Error('This post is locked for your current Patreon account');
      if(!data.files.length){this.history.posts[post.id]={status:'no_3mf',title:data.title,resources:[]};await this.save();stats.noFiles++;continue}
-     entry=entry||{resources:[]};entry.resources=entry.resources||[];entry.postId=post.id;entry.provider='patreon';entry.title=data.title;entry.status='partial';delete entry.error;
+     entry=entry||{resources:[]};entry.resources=entry.resources||[];entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];entry.postId=post.id;entry.provider='patreon';entry.title=data.title;entry.status='partial';delete entry.error;
      this.history.posts[post.id]=entry;await this.save();
      const resources=downloadResources(data,post.id,folder);
      if(!resources.some(r=>r.kind==='image'))throw Error('No main gallery image was found');
      for(const resource of resources){
       this.assertRunning();let record=entry.resources.find(r=>r.key===resource.key);
-      if(record){const item=await this.getDownload(record.downloadId);if(resourceComplete(item,resource.kind))continue;if(item?.state==='in_progress'){await this.waitDownload(record.downloadId,resource.kind);continue}}
+      if(record){Object.assign(record,{attachmentId:resource.attachmentId,identityKind:resource.identityKind,originalFilename:resource.originalFilename,folder});const item=await this.getDownload(record.downloadId);if(resourceComplete(item,resource.kind)){record.state='complete';await this.save();continue;}if(item?.state==='in_progress'){await this.waitDownload(record.downloadId,resource.kind);record.state='complete';await this.save();continue}}
       const downloadId=await this.api.downloads.download({url:resource.url,filename:resource.filename,conflictAction:'uniquify',saveAs:false});
       // Store only IDs and filenames. Signed attachment/image URLs stay in memory.
-      record={key:resource.key,kind:resource.kind,filename:resource.filename,downloadId};
+      record={key:resource.key,kind:resource.kind,filename:resource.filename,downloadId,folder,attachmentId:resource.attachmentId,identityKind:resource.identityKind,originalFilename:resource.originalFilename,state:'pending'};
       entry.resources=entry.resources.filter(r=>r.key!==resource.key);entry.resources.push(record);await this.save();
-      const downloaded=await this.waitDownload(downloadId,resource.kind);record.filename=downloaded.filename;await this.save();
+      const downloaded=await this.waitDownload(downloadId,resource.kind);record.filename=downloaded.filename;record.state='complete';await this.save();
      }
      entry.status='complete';entry.completedAt=new Date().toISOString();await this.save();stats.complete++;
     }catch(error){
@@ -132,6 +133,7 @@ export class Runner{
    }
    return stats;
   }finally{
+   try{await exportManifest(this.api,this.history,folder);this.notify('Saved '+folder+'/patreon-download-manifest.json')}catch(error){this.notify('Manifest export failed: '+error.message,'error')}
    // Close only the work tab created by this run. Keep login/security pages visible for diagnosis.
    if(this.worker!==null&&!this.stop&&!this.preserveWorker){try{const t=await this.api.tabs.get(this.worker);if(!t.url?.includes('/login'))await this.api.tabs.remove(this.worker)}catch{}}
   }

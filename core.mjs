@@ -1,3 +1,4 @@
+import {attachmentIdentity} from './download-manifest.mjs';
 export function sourceId(value){
  const u=new URL(value);if(u.origin!=='https://www.patreon.com')throw Error('Enter a Patreon collection or creator posts URL');
  const path=u.pathname.replace(/\/$/,'');
@@ -19,7 +20,7 @@ export function downloadResources(post,id,folder){
  const resources=files.map((f,index)=>{
   const u=new URL(f.url);if(u.protocol!=='https:'||u.hostname!=='www.patreon.com'||u.pathname!=='/file')throw Error('Attachment link is not a Patreon file URL');
   const stem=safeName(f.name.replace(/\.3mf$/i,''));
-  return {key:`model:${index}:${f.name}`,kind:'model',url:u.href,filename:`${folder}/${stem} - Patreon ${id}${index?` - ${index+1}`:''}.3mf`};
+  return {...attachmentIdentity(u.href,f.name),originalFilename:f.name,key:`model:${index}:${f.name}`,kind:'model',url:u.href,filename:`${folder}/${stem} - Patreon ${id}${index?` - ${index+1}`:''}.3mf`};
  });
  if(resources.length&&post.images.length){
   const u=new URL(post.images[0]);if(u.protocol!=='https:'||!(u.hostname.endsWith('.patreonusercontent.com')||u.hostname.endsWith('.patreon.com')||u.hostname==='www.patreon.com'))throw Error('Gallery image host is not Patreon');
