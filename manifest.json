@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Patreon Model Downloader",
+  "version": "1.0.4",
+  "description": "Download accessible Patreon collection 3MF attachments and main images using your existing Chrome session.",
+  "permissions": ["scripting", "downloads", "storage"],
+  "host_permissions": ["https://www.patreon.com/*"],
+  "action": {"default_title": "Open Patreon Model Downloader"},
+  "background": {"service_worker": "background.js"}
+}

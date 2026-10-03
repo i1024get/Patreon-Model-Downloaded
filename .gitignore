@@ -1,0 +1,8 @@
+*.zip
+*.3mf
+*.stl
+*.log
+*progress*.json
+node_modules/
+.DS_Store
+Thumbs.db
