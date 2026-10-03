@@ -112,16 +112,26 @@ export class Runner{
      entry=entry||{resources:[]};entry.resources=entry.resources||[];entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];entry.postId=post.id;entry.provider='patreon';entry.title=data.title;entry.status='partial';delete entry.error;
      this.history.posts[post.id]=entry;await this.save();
      const resources=downloadResources(data,post.id,folder);
-     if(!resources.some(r=>r.kind==='image'))throw Error('No main gallery image was found');
+     const errors=[];entry.warnings=resources.some(r=>r.kind==='image')?[]:['No product image available; models downloaded without an image.'];
+     if(entry.warnings.length)this.notify(entry.warnings[0]);
      for(const resource of resources){
-      this.assertRunning();let record=entry.resources.find(r=>r.key===resource.key);
+      this.assertRunning();let record=entry.resources.find(r=>resource.identityKind==='patreon_attachment_id'?r.attachmentId===resource.attachmentId:r.key===resource.key);
+      try{
       if(record){Object.assign(record,{attachmentId:resource.attachmentId,identityKind:resource.identityKind,originalFilename:resource.originalFilename,folder});const item=await this.getDownload(record.downloadId);if(resourceComplete(item,resource.kind)){record.state='complete';await this.save();continue;}if(item?.state==='in_progress'){await this.waitDownload(record.downloadId,resource.kind);record.state='complete';await this.save();continue}}
       const downloadId=await this.api.downloads.download({url:resource.url,filename:resource.filename,conflictAction:'uniquify',saveAs:false});
       // Store only IDs and filenames. Signed attachment/image URLs stay in memory.
       record={key:resource.key,kind:resource.kind,filename:resource.filename,downloadId,folder,attachmentId:resource.attachmentId,identityKind:resource.identityKind,originalFilename:resource.originalFilename,state:'pending'};
       entry.resources=entry.resources.filter(r=>r.key!==resource.key);entry.resources.push(record);await this.save();
-      const downloaded=await this.waitDownload(downloadId,resource.kind);record.filename=downloaded.filename;record.state='complete';await this.save();
+      const downloaded=await this.waitDownload(downloadId,resource.kind);record.filename=downloaded.filename;record.state='complete';delete record.error;await this.save();
+      }catch(error){
+       if(this.stop)throw error;
+       const message=String(error.message||error).replace(/https?:\/\/\S+/g,'[URL removed]');
+       if(record){record.state='interrupted';record.error=message;await this.save()}
+       errors.push(resource.kind+': '+(resource.originalFilename||'image')+' — '+message);
+       this.notify(errors.at(-1),'error');
+      }
      }
+     if(errors.length)throw Error(errors.join('; '));
      entry.status='complete';entry.completedAt=new Date().toISOString();await this.save();stats.complete++;
     }catch(error){
      const message=String(error.message||error).replace(/https?:\/\/\S+/g,'[URL removed]');

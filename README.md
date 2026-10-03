@@ -106,3 +106,6 @@ Run `node manifest-tests.mjs` alongside the existing offline checks. Automatic e
 
 ## Inline product images (v1.0.6)
 If the post has no gallery image, the downloader uses the first image in a figure inside `.patreon-post-content`. This supports rich-text image posts such as Activo_3d's Manny the Mammoth sample while excluding creator avatars and recommendation thumbnails. Gallery images retain priority. Partial posts retry when you run Start / Resume.
+
+## Independent resources (v1.0.7)
+An unavailable attachment no longer blocks later model attachments or the image. Each failed resource is recorded separately and the post remains partial for retry; completed resources are retained. Identical filenames with different attachment IDs are separate models. Posts without product images download their 3MFs and finish with a visible warning and null image mapping in the manifest. The Files column counts completed resources, not attempted downloads. Missing-image warnings are also exported.

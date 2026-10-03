@@ -16,7 +16,7 @@ export function buildManifest(history,folder,now=new Date().toISOString()){
    const name=originalName(r);const attachmentId=r.attachmentId||name;
    return {attachmentId,identityKind:r.identityKind||'filename_fallback',sourceKey:JSON.stringify(['patreon',id,attachmentId]),originalFilename:name,filename:pathParts(r.filename).at(-1),status:completed(r)?'complete':'incomplete',imageFilename:image?pathParts(image.filename).at(-1):null};
   });
-  if(models.length)posts.push({postId:id,postUrl:`https://www.patreon.com/posts/${id}`,title:entry.title||'',status:entry.status,completedAt:entry.completedAt||null,sourceUrls:entry.sourceUrls||[],models});
+  if(models.length)posts.push({postId:id,postUrl:`https://www.patreon.com/posts/${id}`,title:entry.title||'',status:entry.status,completedAt:entry.completedAt||null,sourceUrls:entry.sourceUrls||[],warnings:entry.warnings||[],models});
  }
  return {schemaVersion:1,provider:'patreon',designerFolder:folder,generatedAt:now,posts};
 }

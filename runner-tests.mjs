@@ -51,3 +51,19 @@ console.log('Creator feed scrolling, delayed batches, deduplication, and downloa
 
 assert.equal(feed.manifests.size,1);assert.equal(stopping.manifests.size,1);
 console.log('Automatic manifest export after full and stopped runs passed');
+// A broken first attachment must not block later same-name models or the image.
+const broken=fakeAPI();const readBroken=broken.api.scripting.executeScript;
+broken.api.scripting.executeScript=async arg=>{const out=await readBroken(arg);if(arg.args[0]==='post')out[0].result.files=[1,2,3].map((id,i)=>({name:i<2?'Bebop.3mf':'Bebop4c.3mf',url:`https://www.patreon.com/file?h=1&m=${id}`}));return out};
+const downloadBroken=broken.api.downloads.download;
+broken.api.downloads.download=async options=>{const id=await downloadBroken(options);if(options.url.endsWith('m=1'))Object.assign(broken.items.get(id),{state:'interrupted',error:'SERVER_BAD_CONTENT'});return id};
+await new Runner(broken.api,()=>{},async()=>{}).run(1,'2088592','Designer',1);
+assert.equal([...broken.items.values()].filter(x=>x.state==='complete').length,3);
+const noImage=fakeAPI();const readNoImage=noImage.api.scripting.executeScript;
+noImage.api.scripting.executeScript=async arg=>{const out=await readNoImage(arg);if(arg.args[0]==='post')out[0].result.images=[];return out};
+assert.equal((await new Runner(noImage.api,()=>{},async()=>{}).run(1,'2088592','Designer',1)).complete,1);
+assert.equal(noImage.items.size,1);
+console.log('Broken first attachment isolation and model downloads without images passed');
+await new Runner(broken.api,()=>{},async()=>{}).run(1,'2088592','Designer',1);
+assert.equal(broken.items.size,5); // Only the broken attachment is retried.
+assert.equal(noImage.stored.history.posts['1'].warnings.length,1);
+console.log('Partial retry preserves working attachments and image passed');
