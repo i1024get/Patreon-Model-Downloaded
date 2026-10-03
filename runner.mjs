@@ -2,7 +2,7 @@ import {exportManifest} from './download-manifest.mjs';
 import {postId,downloadResources,resourceComplete,inspectPage} from './core.mjs';
 export class Runner{
  constructor(api,notify=()=>{},sleep=ms=>new Promise(r=>setTimeout(r,ms))){this.api=api;this.notify=notify;this.sleep=sleep;this.stop=false;this.history={version:1,posts:{}};this.worker=null;this.preserveWorker=false}
- async save(){await this.api.storage.local.set({history:this.history})}
+ async save(){if(this.currentPostId&&this.history.posts[this.currentPostId])this.history.posts[this.currentPostId].updatedAt=new Date().toISOString();await this.api.storage.local.set({history:this.history})}
  assertRunning(){if(this.stop)throw Error('Stopped. Progress is saved; click Start / Resume to continue.')}
  async read(tabId,mode,id){
   const results=await this.api.scripting.executeScript({target:{tabId},func:inspectPage,args:[mode,id]});const state=results[0]?.result;
@@ -102,7 +102,7 @@ export class Runner{
   try{
    for(let index=0;index<posts.length;index++){
     this.assertRunning();if(limit&&index>=limit)break;
-    const post=posts[index];let entry=this.history.posts[post.id];
+    const post=posts[index];this.currentPostId=post.id;let entry=this.history.posts[post.id];
     this.notify(`${index+1} / ${posts.length}: post ${post.id}`);
     if(await this.postComplete(entry)){entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];await this.save();stats.skipped++;continue}
     try{
