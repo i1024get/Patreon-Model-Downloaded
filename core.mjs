@@ -63,6 +63,9 @@ export function inspectPage(mode,collectionId){
  }
  const title=[...document.querySelectorAll('h1[data-tag="post-title"]')].map(n=>n.textContent.trim()).find(Boolean)||'';
  const files=[...document.querySelectorAll('a[data-tag="post-attachment-link"]')].map(a=>({name:a.textContent.trim(),url:a.href})).filter(a=>/\.3mf$/i.test(a.name));
- const images=[...document.querySelectorAll('img[data-tag="gallery-image"]')].map(img=>img.currentSrc||img.src).filter(Boolean);
+ const gallery=[...document.querySelectorAll('img[data-tag="gallery-image"]')];
+ // Some image posts embed the product in rich text rather than a gallery.
+ const candidates=gallery.length?gallery:[...document.querySelectorAll('.patreon-post-content figure img')];
+ const images=candidates.map(img=>img.currentSrc||img.src).filter(Boolean);
  return {title,files,images:[...new Set(images)],locked:/join to unlock|unlock this post|this post is locked/i.test(text),ready:!!title};
 }

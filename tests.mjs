@@ -39,3 +39,13 @@ location.pathname='/c/javier3d/posts';
 document.querySelectorAll=selector=>selector==='[data-tag="post-card"]'?[{querySelectorAll(){return [card]}}]:[];
 document.querySelector=()=>null;
 assert.equal(inspectPage('feed','feed:/c/javier3d/posts').links[0].url,card.href);
+// Activo_3d's Manny post embeds its product image in the rich-text body.
+const inlineImage={currentSrc:'https://c10.patreonusercontent.com/Manny.png',src:''};
+document.querySelectorAll=selector=>{
+ if(selector==='h1[data-tag="post-title"]')return [{textContent:'ICE AGE-Manny the Mammoth'}];
+ if(selector==='.patreon-post-content figure img')return [inlineImage];
+ return [];
+};
+location.pathname='/posts/143348953';
+assert.equal(inspectPage('post','').images[0],inlineImage.currentSrc);
+console.log('Inline post-body product image fallback passed');

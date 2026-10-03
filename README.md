@@ -103,3 +103,6 @@ New model downloads record the numeric `m` identifier from Patreon's file URL as
 The manifest is import metadata; **3DHub does not read it yet**. Its future importer should consume only completed resources and distinguish incomplete posts. Model/image filenames are relative to the manifest's folder, including Chrome's final collision-renamed filenames. History for already moved/imported files is deliberately retained; a missing file should be handled by the importer. Existing history with no saved source URL exports an empty source list unless rescanned.
 
 Run `node manifest-tests.mjs` alongside the existing offline checks. Automatic export happens at run end; if the dashboard/Chrome closes abruptly, use Save import manifest after reopening to refresh the file. Manifest saving errors are reported separately in the dashboard.
+
+## Inline product images (v1.0.6)
+If the post has no gallery image, the downloader uses the first image in a figure inside `.patreon-post-content`. This supports rich-text image posts such as Activo_3d's Manny the Mammoth sample while excluding creator avatars and recommendation thumbnails. Gallery images retain priority. Partial posts retry when you run Start / Resume.
