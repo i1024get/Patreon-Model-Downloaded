@@ -3,7 +3,7 @@ export function sourceId(value){
  const u=new URL(value);if(u.origin!=='https://www.patreon.com')throw Error('Enter a Patreon collection or creator posts URL');
  const path=u.pathname.replace(/\/$/,'');
  if(/^\/collection\/\d+$/.test(path))return path.split('/').pop();
- if(/^\/c\/[^/]+\/posts$/.test(path))return 'feed:'+path;
+ if(/^\/(?:c|cw)\/[^/]+\/posts$/.test(path))return 'feed:'+path;
  throw Error('Enter a Patreon collection or creator posts URL');
 }
 export function safeName(input){

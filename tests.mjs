@@ -49,3 +49,5 @@ document.querySelectorAll=selector=>{
 location.pathname='/posts/143348953';
 assert.equal(inspectPage('post','').images[0],inlineImage.currentSrc);
 console.log('Inline post-body product image fallback passed');
+
+assert.equal(sourceId('https://www.patreon.com/cw/jibbyscrafthouse/posts'),'feed:/cw/jibbyscrafthouse/posts');

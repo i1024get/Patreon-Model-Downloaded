@@ -109,3 +109,6 @@ If the post has no gallery image, the downloader uses the first image in a figur
 
 ## Independent resources (v1.0.7)
 An unavailable attachment no longer blocks later model attachments or the image. Each failed resource is recorded separately and the post remains partial for retry; completed resources are retained. Identical filenames with different attachment IDs are separate models. Posts without product images download their 3MFs and finish with a visible warning and null image mapping in the manifest. The Files column counts completed resources, not attempted downloads. Missing-image warnings are also exported.
+
+## Additional creator URL format (v1.0.8)
+Creator feeds with `/cw/<creator>/posts` are accepted alongside `/c/<creator>/posts`, including https://www.patreon.com/cw/jibbyscrafthouse/posts.
