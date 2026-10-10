@@ -27,3 +27,5 @@ window.addEventListener('beforeunload',event=>{if(running){event.preventDefault(
 render();
 
 $('manifest').addEventListener('click',async()=>{const folder=$('folder').value.trim();if(!folder||folder!==safeName(folder)||folder.includes('..')){log('Enter a simple designer folder name.','error');return}try{const {history}=await chrome.storage.local.get('history');await exportManifest(chrome,history||{posts:{}},folder);log('Saved '+folder+'/patreon-download-manifest.json')}catch(error){log(error.message,'error')}});
+
+document.addEventListener('patreon-bridge-busy',event=>setBusy(event.detail));

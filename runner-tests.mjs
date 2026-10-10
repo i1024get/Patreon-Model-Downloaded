@@ -67,3 +67,16 @@ await new Runner(broken.api,()=>{},async()=>{}).run(1,'2088592','Designer',1);
 assert.equal(broken.items.size,5); // Only the broken attachment is retried.
 assert.equal(noImage.stored.history.posts['1'].warnings.length,1);
 console.log('Partial retry preserves working attachments and image passed');
+// Bridge scans must inspect completed posts and discover newly added attachments.
+const rescan=fakeAPI();await new Runner(rescan.api,()=>{},async()=>{}).run(1,'2088592','BridgeFolder');const before=rescan.items.size,oldRead=rescan.api.scripting.executeScript;
+rescan.api.scripting.executeScript=async args=>{const result=await oldRead(args);if(args.args[0]==='post')result[0].result.files.push({name:'New.3mf',url:'https://www.patreon.com/file?m=999'});return result};
+const rescanned=await new Runner(rescan.api,()=>{},async()=>{}).run(1,'2088592','BridgeFolder',0,{rescan:true,known:[{post_id:'1',attachment_id:'Duck.3mf',identity_kind:'filename_fallback',original_filename:'Duck.3mf'},{post_id:'2',attachment_id:'Duck.3mf',identity_kind:'filename_fallback',original_filename:'Duck.3mf'}]});assert.equal(rescanned.complete,2);assert.equal(rescan.items.size,before+2);
+console.log('Bridge rescan discovers new attachments on completed posts');
+const manual=fakeAPI();await new Runner(manual.api,()=>{},async()=>{}).run(1,'2088592','Manual');
+await new Runner(manual.api,()=>{},async()=>{}).run(1,'2088592','Stage',0,{rescan:true,known:[]});
+assert.equal(manual.items.size,8);assert(Object.values(manual.stored.history.posts).every(p=>p.resources.every(r=>r.filename.startsWith('Stage/'))));
+const unique=fakeAPI();await new Runner(unique.api,()=>{},async()=>{}).run(1,'2088592','Stage');
+const record=unique.stored.history.posts['1'].resources[0];unique.items.get(record.downloadId).filename='Stage/Actual (1).3mf';record.state='pending';
+await new Runner(unique.api,()=>{},async()=>{}).run(1,'2088592','Stage',0,{rescan:true,known:[]});
+assert.equal(unique.stored.history.posts['1'].resources[0].filename,'Stage/Actual (1).3mf');
+console.log('Manual-folder isolation and actual resumed filename checks passed');
