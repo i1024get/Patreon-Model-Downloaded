@@ -1,5 +1,18 @@
 import {exportManifest} from './download-manifest.mjs';
 import {postId,downloadResources,resourceComplete,inspectPage} from './core.mjs';
+export function postDateSeconds(value){
+ if(value==null||value==='')return null;
+ const numeric=Number(value);if(Number.isFinite(numeric)&&numeric>0)return numeric>1e12?numeric/1000:numeric;
+ if(!/\b\d{4}\b/.test(String(value)))return null;
+ const ms=Date.parse(value);return Number.isFinite(ms)?ms/1000:null;
+}
+export function scopePosts(posts,options={}){return options.since?posts.filter(p=>{const date=postDateSeconds(p.publishedAt);return date===null||date>=options.since;}):posts;}
+function scopeBoundary(state,options){
+ if(!options.since||!state.newestFirst||state.loading)return false;
+ const cards=[...new Map((state.links||[]).filter(p=>!p.pinned).map(p=>[postId(p.url),p])).values()];
+ const dates=cards.map(p=>postDateSeconds(p.publishedAt));
+ return dates.length>=2&&dates.every(d=>d!==null)&&dates.every((d,i)=>!i||d<=dates[i-1])&&dates.at(-1)<options.since;
+}
 export class Runner{
  constructor(api,notify=()=>{},sleep=ms=>new Promise(r=>setTimeout(r,ms))){this.api=api;this.notify=notify;this.sleep=sleep;this.stop=false;this.history={version:1,posts:{}};this.worker=null;this.preserveWorker=false}
  async save(){if(this.currentPostId&&this.history.posts[this.currentPostId])this.history.posts[this.currentPostId].updatedAt=new Date().toISOString();await this.api.storage.local.set({history:this.history})}
@@ -11,26 +24,27 @@ export class Runner{
   if(state.login){this.preserveWorker=true;throw Error('Patreon sign-in is required in your regular Chrome. Stopped.');}
   return state;
  }
- async collectFeed(tabId,id){
+ async collectFeed(tabId,id,options={}){
   const posts=new Map();let idle=0,empty=0;
   while(true){
    this.assertRunning();const state=await this.read(tabId,'feed',id);const before=posts.size;
-   for(const link of state.links){const key=postId(link.url);if(key)posts.set(key,{id:key,url:link.url})}
+   for(const link of state.links){const key=postId(link.url);if(key)posts.set(key,{...link,id:key,url:link.url})}
    this.notify(`Loading creator feed: ${posts.size} posts`);
+   if(scopeBoundary(state,options)){this.notify('Reached the date cutoff; older feed posts will not be opened.');return scopePosts([...posts.values()],options);}
    if(!posts.size){if(++empty>=60)throw Error('No creator post cards found after 60 seconds. Keep the feed open and check that posts are visible.');}
    else if(posts.size>before)idle=0;
-   else if(!state.loading&&!state.more){if(++idle>=10)return [...posts.values()]}
+   else if(!state.loading&&!state.more){if(++idle>=10)return scopePosts([...posts.values()],options)}
    else {idle=0;if(++empty>=120)throw Error('Creator feed loading stalled. Downloads have not started.');}
    if(posts.size>before)empty=0;
    await this.read(tabId,'feedAdvance',id);await this.sleep(1000);
   }
  }
- async collect(tabId,id){
-  if(id.startsWith('feed:'))return this.collectFeed(tabId,id);
+ async collect(tabId,id,options={}){
+  if(id.startsWith('feed:'))return this.collectFeed(tabId,id,options);
   const posts=new Map();let expected=null;let emptyAttempts=0;
   while(true){
    this.assertRunning();const state=await this.read(tabId,'collection',id);
-   for(const link of state.links){const key=postId(link.url);if(key)posts.set(key,{id:key,url:link.url})}
+   for(const link of state.links){const key=postId(link.url);if(key)posts.set(key,{...link,id:key,url:link.url})}
    expected=state.expected??expected;this.notify(`Loading collection: ${posts.size}${expected?' / '+expected:''} posts`);
    if(!posts.size){
     if(emptyAttempts++>=60)throw Error(`No collection cards found after waiting 60 seconds (${state.postLinks??0} post links seen). Keep the collection tab open and send this log if its cards are visible.`);
@@ -40,19 +54,19 @@ export class Runner{
     if(expected&&posts.size<expected){
      // A loading page can briefly omit Load More. Give that render a chance to settle.
      await this.sleep(1500);const fresh=await this.read(tabId,'collection',id);
-     for(const link of fresh.links){const key=postId(link.url);if(key)posts.set(key,{id:key,url:link.url})}
+     for(const link of fresh.links){const key=postId(link.url);if(key)posts.set(key,{...link,id:key,url:link.url})}
      if(fresh.more)continue;
      if(posts.size<expected)throw Error(`Only ${posts.size} of ${expected} posts found. Downloads have not started.`);
     }
     if(!posts.size)throw Error('No collection posts found. Open the collection and wait until its cards appear.');
-    return [...posts.values()];
+    return scopePosts([...posts.values()],options);
    }
    const before=posts.size;
    if(!state.loading)await this.read(tabId,'loadMore',id);
    let added=false;
    for(let attempt=0;attempt<45;attempt++){
     this.assertRunning();await this.sleep(1000);const next=await this.read(tabId,'collection',id);
-    for(const link of next.links){const key=postId(link.url);if(key)posts.set(key,{id:key,url:link.url})}
+    for(const link of next.links){const key=postId(link.url);if(key)posts.set(key,{...link,id:key,url:link.url})}
     if(posts.size>before){added=true;break}
    }
    if(!added)throw Error('Load More did not add posts. Stopped to avoid repeated requests.');
@@ -97,7 +111,7 @@ export class Runner{
  async run(collectionTab,collectionId,folder,limit=0,options={}){
   const stored=await this.api.storage.local.get('history');this.history=stored.history||{version:1,posts:{}};
   if(!this.history.posts||typeof this.history.posts!=='object')throw Error('Invalid stored download history');
-  const posts=await this.collect(collectionTab,collectionId);await this.api.storage.local.set({lastCollection:{collectionId,posts,folder}});
+  const posts=await this.collect(collectionTab,collectionId,options);await this.api.storage.local.set({lastCollection:{collectionId,posts,folder}});
   const stats={complete:0,skipped:0,failed:0,noFiles:0};
   try{
    for(let index=0;index<posts.length;index++){
@@ -107,6 +121,7 @@ export class Runner{
     if(!options.rescan&&await this.postComplete(entry)){entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];await this.save();stats.skipped++;continue}
     try{
      const data=await this.openPost(post.url);
+     if(options.since&&postDateSeconds(data.publishedAt)!==null&&postDateSeconds(data.publishedAt)<options.since){stats.skipped++;continue;}
      if(data.locked&&!data.files.length)throw Error('This post is locked for your current Patreon account');
      if(!data.files.length){this.history.posts[post.id]={status:'no_3mf',title:data.title,resources:[]};await this.save();stats.noFiles++;continue}
      entry=entry||{resources:[]};entry.resources=entry.resources||[];entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];entry.postId=post.id;entry.provider='patreon';entry.title=data.title;entry.status='partial';delete entry.error;

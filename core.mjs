@@ -32,6 +32,32 @@ export function downloadResources(post,id,folder){
 // Self-contained because Chrome serializes this function into the Patreon tab.
 export function inspectPage(mode,collectionId){
  const text=document.body?.innerText||'';
+ const postDates=new Map();let visited=0;
+ const visit=value=>{
+  if(++visited>50000||!value||typeof value!=='object')return;
+  if(value.type==='post'&&value.id&&value.attributes?.published_at)postDates.set(String(value.id),value.attributes.published_at);
+  for(const child of Object.values(value))if(child&&typeof child==='object')visit(child);
+ };
+ for(const script of document.querySelectorAll('script:not([src])')){
+  const raw=script.textContent||'';if(!raw.includes('published_at'))continue;
+  try{
+   if(script.type==='application/json'){visit(JSON.parse(raw));continue;}
+   const match=raw.match(/self\.__next_f\.push\(([\s\S]*)\)\s*;?\s*$/);if(!match)continue;
+   for(const chunk of JSON.parse(match[1]))if(typeof chunk==='string')for(const record of chunk.split('\n')){
+    const body=record.slice(record.indexOf(':')+1);if(!/^[\[{]/.test(body))continue;
+    try{visit(JSON.parse(body));}catch(e){}
+   }
+  }catch(e){}
+ }
+ const cardDate=card=>{
+  if(!card)return null;
+  const time=card.querySelector?.('time[datetime], [data-tag="post-published-at"], [data-tag="post-published-date"]');
+  const value=time?.getAttribute?.('datetime')||time?.getAttribute?.('data-published-at')||time?.getAttribute?.('title')||time?.textContent||'';
+  return /\b\d{4}\b/.test(value)?value.trim():null;
+ };
+ const linkInfo=a=>{const card=a.closest?.('[data-tag="post-card"]');return {url:a.href,title:a.innerText||a.textContent||'',publishedAt:cardDate(card)||postDates.get(a.href.match(/(?:^|\/)(?:[^/]*-)?(\d+)(?:[?/#]|$)/)?.[1])||null,pinned:!!card&&(!!card.querySelector?.('[aria-label*="Pinned"], [title*="Pinned"]')||/^pinned\b/i.test(card.innerText?.trim()||''))};};
+ const newestFirst=[...document.querySelectorAll('select option:checked, [aria-selected="true"], [aria-checked="true"], button[aria-haspopup]')].some(el=>/^(newest|newest first|most recent)$/i.test(el.textContent.trim()));
+
  const blocked=/just a moment/i.test(document.title)||/performing security verification|verify you are human|checking your browser/i.test(text.slice(0,6000));
  const login=location.pathname.startsWith('/login');
  if(blocked)return {blocked:true};if(login)return {login:true};
@@ -40,19 +66,19 @@ export function inspectPage(mode,collectionId){
   if(location.pathname.replace(/\/$/,'')!==path)return {links:[],more:false,loading:true};
   const cards=[...document.querySelectorAll('[data-tag="post-card"]')];
   const anchors=cards.flatMap(card=>[...card.querySelectorAll('a[href*="/posts/"]')]);
-  const links=anchors.filter(a=>{try{const u=new URL(a.href);return u.origin==='https://www.patreon.com'&&/^\/(?:[^/]+\/)?posts\/(?:[^/]*-)?\d+\/?$/.test(u.pathname)}catch{return false}}).map(a=>({url:a.href}));
+  const links=anchors.filter(a=>{try{const u=new URL(a.href);return u.origin==='https://www.patreon.com'&&/^\/(?:[^/]+\/)?posts\/(?:[^/]*-)?\d+\/?$/.test(u.pathname)}catch{return false}}).map(linkInfo);
   const button=[...document.querySelectorAll('button')].find(b=>/^load more$/i.test(b.textContent.trim()));
   const loading=!!button?.disabled||!!document.querySelector('[role="progressbar"], [aria-busy="true"]');
   if(mode==='feedAdvance'){
    if(button&&!button.disabled)button.click();
    else {cards.at(-1)?.scrollIntoView({block:'end'});window.scrollTo(0,document.documentElement.scrollHeight)}
   }
-  return {links,more:!!button,loading,postLinks:anchors.length};
+  return {links,more:!!button,loading,postLinks:anchors.length,newestFirst};
  }
  if(mode==='collection'){
   const anchors=[...document.querySelectorAll('a[href*="/posts/"]')];
   const onCollection=location.pathname===`/collection/${collectionId}`;
-  const links=anchors.filter(a=>{try{const u=new URL(a.href);return u.protocol==='https:'&&u.hostname==='www.patreon.com'&&(u.searchParams.get('collection')===collectionId||(onCollection&&!u.searchParams.has('collection')&&!!a.closest?.('[data-tag="post-card"]')))}catch{return false}}).map(a=>({url:a.href,title:a.innerText||a.textContent||''}));
+  const links=anchors.filter(a=>{try{const u=new URL(a.href);return u.protocol==='https:'&&u.hostname==='www.patreon.com'&&(u.searchParams.get('collection')===collectionId||(onCollection&&!u.searchParams.has('collection')&&!!a.closest?.('[data-tag="post-card"]')))}catch{return false}}).map(linkInfo);
   const button=[...document.querySelectorAll('button')].find(b=>/^load more$/i.test(b.textContent.trim()));
   const expected=text.match(/([\d,]+)\s+posts\b/i)?.[1];
   if(mode==='collection')return {links,postLinks:anchors.length,more:!!button,loading:!!button?.disabled,expected:expected?Number(expected.replaceAll(',','')):null};
@@ -67,5 +93,5 @@ export function inspectPage(mode,collectionId){
  // Some image posts embed the product in rich text rather than a gallery.
  const candidates=gallery.length?gallery:[...document.querySelectorAll('.patreon-post-content figure img')];
  const images=candidates.map(img=>img.currentSrc||img.src).filter(Boolean);
- return {title,files,images:[...new Set(images)],locked:/join to unlock|unlock this post|this post is locked/i.test(text),ready:!!title};
+ return {publishedAt:postDates.get(location.pathname.match(/(?:^|\/)(?:[^/]*-)?(\d+)\/?$/)?.[1])||cardDate(document),title,files,images:[...new Set(images)],locked:/join to unlock|unlock this post|this post is locked/i.test(text),ready:!!title};
 }
