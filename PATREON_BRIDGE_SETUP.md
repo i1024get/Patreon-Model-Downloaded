@@ -65,3 +65,9 @@ attachments. It does not enumerate the collection or feed. Successful and failed
 post IDs are returned separately as `downloaded_post_ids` and `failed_post_ids`.
 Jobs without a mode retain the existing download behavior. Automatic native-host
 reconnection, stale-port isolation, and active-job heartbeats remain enabled.
+
+## Extension 1.3.3: keep the bridge responsive between jobs
+
+The extension background worker now owns the native connection and schedules polling. The dashboard receives worker messages instead of relying on its own timer, which Chrome can throttle while the tab is hidden. Scans and downloads keep the same connection available for the next job. Keep the dashboard open; closing it releases the native host. A real host disconnect still uses the existing reconnect handling.
+
+Pull the updated extension repository, reload it at chrome://extensions, then reopen the dashboard and connect once. No Desktop Agent reinstall is required for this update.

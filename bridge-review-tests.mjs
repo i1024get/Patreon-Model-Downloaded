@@ -4,12 +4,13 @@ let calls=[],options,writes=0;
 globalThis.document={getElementById(){return null},dispatchEvent(){},addEventListener(){}};globalThis.CustomEvent=class{};
 let heartbeat;globalThis.setInterval=fn=>{heartbeat=fn};globalThis.setTimeout=()=>1;globalThis.clearTimeout=()=>{};
 const selectedPort={onMessage:{addListener(fn){this.fn=fn}},onDisconnect:{addListener(){}},postMessage(message){calls.push(message);this.onMessage.fn({request_id:message.request_id,result:{job:null}})}};
-globalThis.chrome={runtime:{connectNative(){return selectedPort}},tabs:{async create(){return {id:1}},async get(){return {status:'complete'}}},storage:{local:{async get(){writes++;throw Error('review must not ingest')}}}};
+globalThis.chrome={runtime:{connect(){return selectedPort}},tabs:{async create(){return {id:1}},async get(){return {status:'complete'}}},storage:{local:{async get(){writes++;throw Error('review must not ingest')}}}};
 Object.defineProperty(globalThis,'navigator',{value:{locks:{async request(a,b,fn){await fn({})}}},configurable:true});
 Runner.prototype.run=async(a,b,c,d,o)=>{options=o;return {models:[{id:'1',download_state:'new'}],failed:0}};
 const bridge=await import('./bridge.mjs');
 assert.equal(typeof bridge.runJob,'function');
 bridge.connect();
+heartbeat=()=>selectedPort.onMessage.fn({bridge_tick:true});
 // Immediate waits so job completion is deterministic.
 globalThis.setTimeout=fn=>{queueMicrotask(fn);return 1};
 await bridge.runJob({job_id:'review',url:'https://www.patreon.com/collection/1',stage:'Stage',mode:'review'});

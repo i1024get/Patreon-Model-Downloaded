@@ -36,9 +36,11 @@ export function connect(){
  if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
  if(port)return;
  try{
-  const connection=chrome.runtime.connectNative('com.3dhub.patreon');port=connection;
+  const connection=chrome.runtime.connect({name:'patreon-native'});port=connection;
   connection.onMessage.addListener(message=>{
    if(port!==connection)return;
+   if(message.bridge_tick)return tick();
+   if(message.bridge_error){connectionLost(connection,message.bridge_error);return;}
    const p=pending.get(message.request_id);if(!p)return;
    clearTimeout(p.timer);pending.delete(message.request_id);
    // Only a successful native reply confirms a healthy reconnect.
@@ -100,5 +102,5 @@ if(typeof document!=='undefined'){
  document.getElementById('connectBridge')?.addEventListener('click',connect);
  document.getElementById('stopBridge')?.addEventListener('click',()=>{if(runner){runner.stop=true;status('Stopping after the current file…')}});
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&reconnectEnabled){if(!port)connect();else tick();}});
- setInterval(tick,2000);
+ // The background worker delivers bridge_tick events even while this tab is hidden.
 }
