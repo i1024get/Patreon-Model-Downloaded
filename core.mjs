@@ -56,14 +56,14 @@ export function inspectPage(mode,collectionId){
   return /\b\d{4}\b/.test(value)?value.trim():null;
  };
  const linkInfo=a=>{const card=a.closest?.('[data-tag="post-card"]');return {url:a.href,title:a.innerText||a.textContent||'',publishedAt:cardDate(card)||postDates.get(a.href.match(/(?:^|\/)(?:[^/]*-)?(\d+)(?:[?/#]|$)/)?.[1])||null,pinned:!!card&&(!!card.querySelector?.('[aria-label*="Pinned"], [title*="Pinned"]')||/^pinned\b/i.test(card.innerText?.trim()||''))};};
- const newestFirst=[...document.querySelectorAll('select option:checked, [aria-selected="true"], [aria-checked="true"], button[aria-haspopup]')].some(el=>/^(newest|newest first|most recent)$/i.test(el.textContent.trim()));
+ const newestFirst=[...document.querySelectorAll('select option:checked, [aria-selected="true"], [aria-checked="true"], button[aria-haspopup], [data-tag="posts-sort-button"]')].some(el=>/^(newest|newest first|most recent)$/i.test(el.textContent.trim()));
 
  const blocked=/just a moment/i.test(document.title)||/performing security verification|verify you are human|checking your browser/i.test(text.slice(0,6000));
  const login=location.pathname.startsWith('/login');
  if(blocked)return {blocked:true};if(login)return {login:true};
  if(mode==='feed'||mode==='feedAdvance'){
   const path=collectionId.replace(/^feed:/,'');
-  if(location.pathname.replace(/\/$/,'')!==path)return {links:[],more:false,loading:true};
+  if(location.pathname.replace(/\/$/,'').replace(/^\/cw\//,'/c/')!==path.replace(/^\/cw\//,'/c/'))return {links:[],more:false,loading:true};
   const cards=[...document.querySelectorAll('[data-tag="post-card"]')];
   const anchors=cards.flatMap(card=>[...card.querySelectorAll('a[href*="/posts/"]')]);
   const links=anchors.filter(a=>{try{const u=new URL(a.href);return u.origin==='https://www.patreon.com'&&/^\/(?:[^/]+\/)?posts\/(?:[^/]*-)?\d+\/?$/.test(u.pathname)}catch{return false}}).map(linkInfo);
