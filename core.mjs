@@ -93,5 +93,9 @@ export function inspectPage(mode,collectionId){
  // Some image posts embed the product in rich text rather than a gallery.
  const candidates=gallery.length?gallery:[...document.querySelectorAll('.patreon-post-content figure img')];
  const images=candidates.map(img=>img.currentSrc||img.src).filter(Boolean);
- return {publishedAt:postDates.get(location.pathname.match(/(?:^|\/)(?:[^/]*-)?(\d+)\/?$/)?.[1])||cardDate(document),title,files,images:[...new Set(images)],locked:/join to unlock|unlock this post|this post is locked/i.test(text),ready:!!title};
+ // Flight text records can contain the post JSON without a newline boundary.
+ // The current article's public metadata supplies the same publication timestamp.
+ const metadataDate=document.querySelector?.('meta[property="article:published_time"]')?.getAttribute?.('content');
+ const publishedDate=typeof metadataDate==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(metadataDate)&&Number.isFinite(Date.parse(metadataDate))?metadataDate:null;
+ return {publishedAt:postDates.get(location.pathname.match(/(?:^|\/)(?:[^/]*-)?(\d+)\/?$/)?.[1])||publishedDate||cardDate(document),title,files,images:[...new Set(images)],locked:/join to unlock|unlock this post|this post is locked/i.test(text),ready:!!title};
 }
