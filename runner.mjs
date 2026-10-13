@@ -108,17 +108,47 @@ export class Runner{
   }
   throw Error('Post did not finish loading within 60 seconds');
  }
+ knownResource(resource,postId,data,options,includeHistory=false){
+  if(resource.kind!=='model')return false;
+  const identityMatches=k=>resource.identityKind==='patreon_attachment_id'?k.identity_kind==='patreon_attachment_id'&&String(k.attachment_id)===String(resource.attachmentId):k.identity_kind==='filename_fallback'&&k.original_filename===resource.originalFilename&&data.files.filter(f=>f.name===resource.originalFilename).length===1;
+  if((options.known||[]).some(k=>String(k.post_id)===postId&&identityMatches(k)))return true;
+  return includeHistory&&(this.history.posts[postId]?.resources||[]).some(r=>r.kind==='model'&&r.state==='complete'&&identityMatches({identity_kind:r.identityKind,attachment_id:r.attachmentId,original_filename:r.originalFilename}));
+ }
+ async review(posts,folder,limit,options){
+  const stats=this.reviewStats={complete:0,skipped:0,failed:0,noFiles:0,models:[]};
+  try{
+   for(const post of (limit?posts.slice(0,limit):posts)){
+    this.assertRunning();let model={id:post.id,title:post.title||'Post '+post.id,published_at:post.publishedAt||null,image_url:null,profile_id:null,attachment_count:0,attachments:[],download_state:'error'};
+    try{
+     const data=await this.openPost(post.url);
+     if(options.since&&postDateSeconds(data.publishedAt)!==null&&postDateSeconds(data.publishedAt)<options.since){stats.skipped++;continue}
+     const resources=downloadResources(data,post.id,folder).filter(r=>r.kind==='model');
+     const attachments=resources.map(r=>({attachment_id:r.attachmentId,identity_kind:r.identityKind,original_filename:r.originalFilename,download_state:this.knownResource(r,post.id,data,options,true)?'downloaded':'new'}));
+     const knownCount=attachments.filter(a=>a.download_state==='downloaded').length;
+     model={...model,title:data.title,published_at:data.publishedAt||post.publishedAt||null,image_url:data.images?.[0]||null,profile_id:resources.length?'post':null,attachment_count:resources.length,attachments,download_state:resources.length?(knownCount===resources.length?'downloaded':knownCount?'updated':'new'):data.locked?'locked':'no_files'};
+     if(model.download_state==='downloaded')stats.skipped++;else if(model.download_state==='no_files')stats.noFiles++;else if(model.download_state==='locked')stats.failed++;else stats.complete++;
+    }catch(error){model.error=String(error.message||error).replace(/https?:\/\/\S+/g,'[URL removed]');stats.failed++;if(this.stop||/security verification|sign-in is required/i.test(model.error)){stats.models.push(model);throw error}}
+    stats.models.push(model);this.notify('Reviewed post '+post.id);await this.sleep(1500);
+   }
+   return stats;
+  }finally{if(this.worker!==null&&!this.stop&&!this.preserveWorker)try{await this.api.tabs.remove(this.worker)}catch{}}
+ }
  async run(collectionTab,collectionId,folder,limit=0,options={}){
+  this.reviewStats=options.reviewOnly?{complete:0,skipped:0,failed:0,noFiles:0,models:[]}:null;
   const stored=await this.api.storage.local.get('history');this.history=stored.history||{version:1,posts:{}};
   if(!this.history.posts||typeof this.history.posts!=='object')throw Error('Invalid stored download history');
-  const posts=await this.collect(collectionTab,collectionId,options);await this.api.storage.local.set({lastCollection:{collectionId,posts,folder}});
-  const stats={complete:0,skipped:0,failed:0,noFiles:0};
+  if(options.selectedPostIds!==undefined&&(!Array.isArray(options.selectedPostIds)||options.selectedPostIds.some(id=>typeof id!=='string'||!/^\d+$/.test(id))))throw Error('Invalid selected post ID');
+  const posts=options.selectedPostIds!==undefined?[...new Set(options.selectedPostIds)].map(id=>({id,url:'https://www.patreon.com/posts/'+id})):await this.collect(collectionTab,collectionId,options);
+  if(options.reviewOnly)return this.review(posts,folder,limit,options);
+  await this.api.storage.local.set({lastCollection:{collectionId,posts,folder}});
+  const stats=this.downloadStats={complete:0,skipped:0,failed:0,noFiles:0};
+  if(options.selectedPostIds!==undefined){stats.downloaded_post_ids=[];stats.failed_post_ids=[];}
   try{
    for(let index=0;index<posts.length;index++){
     this.assertRunning();if(limit&&index>=limit)break;
     const post=posts[index];this.currentPostId=post.id;let entry=this.history.posts[post.id];
     this.notify(`${index+1} / ${posts.length}: post ${post.id}`);
-    if(!options.rescan&&await this.postComplete(entry)){entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];await this.save();stats.skipped++;continue}
+    if(!options.rescan&&options.selectedPostIds===undefined&&await this.postComplete(entry)){entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];await this.save();stats.skipped++;continue}
     try{
      const data=await this.openPost(post.url);
      if(options.since&&postDateSeconds(data.publishedAt)!==null&&postDateSeconds(data.publishedAt)<options.since){stats.skipped++;continue;}
@@ -127,8 +157,8 @@ export class Runner{
      entry=entry||{resources:[]};entry.resources=entry.resources||[];entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];entry.postId=post.id;entry.provider='patreon';entry.title=data.title;entry.status='partial';delete entry.error;
      this.history.posts[post.id]=entry;await this.save();
      const resources=downloadResources(data,post.id,folder);
-     const known=resource=>resource.kind==='model'&&(options.known||[]).some(k=>String(k.post_id)===post.id&&(resource.identityKind==='patreon_attachment_id'?k.identity_kind==='patreon_attachment_id'&&String(k.attachment_id)===String(resource.attachmentId):k.identity_kind==='filename_fallback'&&k.original_filename===resource.originalFilename&&data.files.filter(f=>f.name===resource.originalFilename).length===1));
-     if(resources.filter(r=>r.kind==='model').every(known)){entry.status='complete';await this.save();stats.skipped++;continue}
+     const known=resource=>this.knownResource(resource,post.id,data,options);
+     if(resources.filter(r=>r.kind==='model').every(known)){entry.status='complete';await this.save();stats.skipped++;stats.downloaded_post_ids?.push(post.id);continue}
      const errors=[];entry.warnings=resources.some(r=>r.kind==='image')?[]:['No product image available; models downloaded without an image.'];
      if(entry.warnings.length)this.notify(entry.warnings[0]);
      for(const resource of resources){
@@ -150,12 +180,12 @@ export class Runner{
       }
      }
      if(errors.length)throw Error(errors.join('; '));
-     entry.status='complete';entry.completedAt=new Date().toISOString();await this.save();stats.complete++;
+     entry.status='complete';entry.completedAt=new Date().toISOString();await this.save();stats.complete++;stats.downloaded_post_ids?.push(post.id);
     }catch(error){
      const message=String(error.message||error).replace(/https?:\/\/\S+/g,'[URL removed]');
      entry=this.history.posts[post.id]||{resources:[]};entry.status='partial';entry.error=message;this.history.posts[post.id]=entry;await this.save();
      if(this.stop||/security verification|sign-in is required|no tab with id|cannot access contents|missing host permission/i.test(message))throw error;
-     stats.failed++;this.notify(`Post ${post.id} failed: ${message}`,'error');
+     stats.failed++;stats.failed_post_ids?.push(post.id);this.notify(`Post ${post.id} failed: ${message}`,'error');
     }
     await this.sleep(1500);
    }

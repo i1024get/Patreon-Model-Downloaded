@@ -80,3 +80,15 @@ const record=unique.stored.history.posts['1'].resources[0];unique.items.get(reco
 await new Runner(unique.api,()=>{},async()=>{}).run(1,'2088592','Stage',0,{rescan:true,known:[]});
 assert.equal(unique.stored.history.posts['1'].resources[0].filename,'Stage/Actual (1).3mf');
 console.log('Manual-folder isolation and actual resumed filename checks passed');
+// A selected download reopens only canonical selected post URLs, reports outcomes,
+// and never replays a signed URL from a previous review.
+const selection=fakeAPI();selection.api.scripting.executeScript=async arg=>{
+ assert.equal(arg.args[0],'post','selected downloads must not collect the source');
+ const id=(await selection.api.tabs.get(arg.target.tabId)).url.match(/posts\/(\d+)/)[1];
+ return [{result:{ready:true,title:'Selected '+id,files:id==='2'?[]:[{name:'Chosen.3mf',url:'https://www.patreon.com/file?m=NEW_SIGNED_20'}],images:[],locked:id==='2'}}];
+};
+const chosen=await new Runner(selection.api,()=>{},async()=>{}).run(null,'feed:/c/creator/posts','Stage',0,{rescan:true,selectedPostIds:['1','2','1']});
+assert.deepEqual(chosen.downloaded_post_ids,['1']);assert.deepEqual(chosen.failed_post_ids,['2']);assert.equal(selection.items.size,1);assert(!JSON.stringify(selection.stored).includes('NEW_SIGNED'));
+console.log('Selected-only fresh attachment traversal and partial outcome reporting passed');
+const selectedStop=fakeAPI();const selectedStopRunner=new Runner(selectedStop.api,()=>{},async()=>{});selectedStopRunner.sleep=async ms=>{if(ms===1500)selectedStopRunner.stop=true};
+await assert.rejects(selectedStopRunner.run(null,'2088592','Stage',0,{rescan:true,selectedPostIds:['1','2']}),/Stopped/);assert.deepEqual(selectedStopRunner.downloadStats.downloaded_post_ids,['1']);
