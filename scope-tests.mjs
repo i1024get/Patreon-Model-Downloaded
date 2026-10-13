@@ -10,6 +10,7 @@ const collection=new Runner({},()=>{},async()=>{});collection.read=async()=>({li
 assert.deepEqual((await collection.collect(1,'1',{since:cutoff})).map(p=>p.id),['2','3']);
 // Unknown dates are retained, never silently treated as old.
 const unknown=new Runner({},()=>{},async()=>{});let reads=0;
+unknown.openPost=async()=>({publishedAt:null});
 unknown.read=async(_,mode)=>mode==='feedAdvance'?{}:({newestFirst:true,links:[link(1,null),link(2,'2020-01-01')],more:false,loading:false});
 assert.deepEqual((await unknown.collectFeed(1,'feed:/c/D/posts',{since:cutoff})).map(p=>p.id),['1']);
 console.log('Date-scope boundaries, pinned cards, collections, and unknown dates passed');

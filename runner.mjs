@@ -10,7 +10,9 @@ export function scopePosts(posts,options={}){return options.since?posts.filter(p
 function scopeBoundary(state,options){
  if(!options.since||!state.newestFirst||state.loading)return false;
  const cards=[...new Map((state.links||[]).filter(p=>!p.pinned).map(p=>[postId(p.url),p])).values()];
- const dates=cards.map(p=>postDateSeconds(p.publishedAt));
+ // Only the tail establishes the cutoff in a verified newest-first feed.
+ // Unknown earlier cards remain candidates and get inspected during review.
+ const dates=cards.slice(-2).map(p=>postDateSeconds(p.publishedAt));
  return dates.length>=2&&dates.every(d=>d!==null)&&dates.every((d,i)=>!i||d<=dates[i-1])&&dates.at(-1)<options.since;
 }
 export class Runner{
@@ -25,12 +27,22 @@ export class Runner{
   return state;
  }
  async collectFeed(tabId,id,options={}){
-  const posts=new Map();let idle=0,empty=0;
+  const posts=new Map(),probed=new Set();let idle=0,empty=0;
   while(true){
    this.assertRunning();const state=await this.read(tabId,'feed',id);const before=posts.size;
-   for(const link of state.links){const key=postId(link.url);if(key)posts.set(key,{...link,id:key,url:link.url})}
+   for(const link of state.links){const key=postId(link.url);if(key)posts.set(key,{...link,id:key,url:link.url,publishedAt:link.publishedAt||posts.get(key)?.publishedAt||null})}
    this.notify(`Loading creator feed: ${posts.size} posts`);
-   if(scopeBoundary(state,options)){this.notify('Reached the date cutoff; older feed posts will not be opened.');return scopePosts([...posts.values()],options);}
+   if(options.since&&posts.size&&!state.newestFirst&&!state.loading)throw Error('Cannot verify newest-first ordering for this scoped feed. Choose Newest first on Patreon and retry, or use Full scan.');
+   if(options.since&&state.newestFirst&&!state.loading){
+    const boundary=[...new Map(state.links.filter(p=>!p.pinned).map(p=>[postId(p.url),p])).values()].slice(-2);
+    if(boundary.length===2)for(const card of boundary){
+     const key=postId(card.url),post=posts.get(key);if(!post||postDateSeconds(post.publishedAt)!==null||probed.has(key))continue;
+     this.assertRunning();probed.add(key);this.notify('Checking publication date at the scope boundary…');
+     const data=await this.openPost(card.url);if(postDateSeconds(data.publishedAt)!==null)post.publishedAt=data.publishedAt;
+    }
+   }
+   const datedState={...state,links:state.links.map(link=>({...link,publishedAt:posts.get(postId(link.url))?.publishedAt||link.publishedAt}))};
+   if(scopeBoundary(datedState,options)){this.notify('Reached the date cutoff; older feed posts will not be loaded.');return scopePosts([...posts.values()],options);}
    if(!posts.size){if(++empty>=60)throw Error('No creator post cards found after 60 seconds. Keep the feed open and check that posts are visible.');}
    else if(posts.size>before)idle=0;
    else if(!state.loading&&!state.more){if(++idle>=10)return scopePosts([...posts.values()],options)}

@@ -31,3 +31,9 @@ Patreon extension git commands (from its own repository):
 git add core.mjs runner.mjs bridge.mjs manifest.json scope-tests.mjs DATE_SCOPE_SETUP.md
 git commit -m "Limit Patreon scans by publication date"
 git push
+
+## Extension 1.3.2: scoped creator feed discovery
+
+Creator feeds resolve missing publication dates on the last two unpinned cards of each settled batch. With verified Newest first sorting, an ordered boundary older than the selected cutoff stops further feed loading. Earlier undated cards remain candidates and are inspected during review. A scoped feed whose sort order cannot be verified reports an error and asks for Newest first, rather than silently enumerating the catalog. Collections still require enumeration because their order is not guaranteed.
+
+After updating this repository, reload Patreon Model Downloader at chrome://extensions and reconnect its dashboard before starting a new check.
