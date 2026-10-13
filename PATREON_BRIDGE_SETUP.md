@@ -49,3 +49,19 @@ git push
 43 Python unit checks passed, including authentication, queueing, metadata context, failed-copy cleanup, idempotent retries, and asynchronous transfer/heartbeat checks. App Node checks passed for the transport, shared sources, MakerWorld sources, atomic designer save, and due-date filter. Extension extraction, manifest, and runner suites passed, including manual-folder isolation and Chrome’s actual resumed filenames. Python compilation and JavaScript syntax checks passed.
 
 The full pytest suite could not run because pytest is absent in this environment. Live Windows native registration, Chrome permission handling, and a real Patreon-to-Unsorted transfer still need the first on-device smoke test.
+
+### Review and selected downloads (1.3.0)
+
+The extension advertises `date_scope` and `review_results`. A bridge job with
+`mode: "review"` scans the bounded source and opens eligible posts to return
+preview cards. It does not download files, export a manifest, update extension
+history, or ingest staging files. Review still opens completed posts so new
+attachments can be discovered. Missing publication dates remain eligible.
+Preview image links are transient signed URLs and must not be persisted.
+
+A job with `mode: "download"` and `selected_posts: ["123", "456"]` reopens only
+those canonical post URLs, reads fresh attachment links, and downloads unknown
+attachments. It does not enumerate the collection or feed. Successful and failed
+post IDs are returned separately as `downloaded_post_ids` and `failed_post_ids`.
+Jobs without a mode retain the existing download behavior. Automatic native-host
+reconnection, stale-port isolation, and active-job heartbeats remain enabled.
