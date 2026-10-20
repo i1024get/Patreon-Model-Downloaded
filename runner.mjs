@@ -27,12 +27,18 @@ export class Runner{
   return state;
  }
  async collectFeed(tabId,id,options={}){
-  const posts=new Map(),probed=new Set();let idle=0,empty=0;
+  const posts=new Map(),probed=new Set();let idle=0,empty=0,orderWaits=0;
   while(true){
    this.assertRunning();const state=await this.read(tabId,'feed',id);const before=posts.size;
    for(const link of state.links){const key=postId(link.url);if(key)posts.set(key,{...link,id:key,url:link.url,publishedAt:link.publishedAt||posts.get(key)?.publishedAt||null})}
    this.notify(`Loading creator feed: ${posts.size} posts`);
-   if(options.since&&posts.size&&!state.newestFirst&&!state.loading)throw Error('Cannot verify newest-first ordering for this scoped feed. Choose Newest first on Patreon and retry, or use Full scan.');
+   if(options.since&&posts.size&&!state.newestFirst&&!state.loading){
+    // Newly opened automation tabs can render cards before the sort control.
+    // Re-read in place; never paginate or infer ordering while it is unknown.
+    if(orderWaits++>=10)throw Error('Cannot verify newest-first ordering for this scoped feed. Choose Newest first on Patreon and retry, or use Full scan.');
+    this.notify('Waiting for Patreon feed ordering to finish loading…');
+    await this.sleep(1000);continue;
+   }
    if(options.since&&state.newestFirst&&!state.loading){
     const boundary=[...new Map(state.links.filter(p=>!p.pinned).map(p=>[postId(p.url),p])).values()].slice(-2);
     if(boundary.length===2)for(const card of boundary){
@@ -209,3 +215,4 @@ export class Runner{
   }
  }
 }
+

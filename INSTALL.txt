@@ -1,0 +1,15 @@
+Patreon feed ordering patch
+
+Install into C:\Projects\Patreon_Model_Downloader (the existing extension folder), not the 3DHub app.
+
+1. Close the extension dashboard when no job is active.
+2. Extract this ZIP into the existing extension folder, replacing runner.mjs.
+3. In chrome://extensions, click Reload for Patreon Model Downloader.
+4. Reopen its dashboard and Connect to 3DHub.
+5. Retry Check & Download All with the same scope.
+
+The app already uses the same scan function for bulk and individual checks. The extension previously rejected a scoped feed on its first settled read if the sort control was not yet visible. This patch waits up to ten one-second retries without scrolling before retaining the existing ordering error. No automatic full scan or assumption of chronological order is introduced.
+
+Offline regression reproduces delayed sort-control rendering. Regression, scope, core, and runner suites pass. The actual Patreon session still needs verification; delayed rendering is a supported explanation, not a confirmed live observation. No 3DHub app deployment is needed.
+
+Optional validation: node feed-order-tests.mjs
