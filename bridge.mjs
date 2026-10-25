@@ -70,7 +70,7 @@ export async function runJob(job){
   for(let i=0;!selected&&i<60;i++){await new Promise(r=>setTimeout(r,1000));const t=await chrome.tabs.get(tab.id);if(t.status==='complete')break}
   let lastProgress=0;
   runner=new Runner(chrome,message=>{status(message);if(Date.now()-lastProgress>1000){lastProgress=Date.now();nativeRequest({action:'progress',job_id:job.job_id,message}).then(r=>{if(r.stop)runner&&(runner.stop=true)}).catch(()=>{runner&&(runner.stop=true)})}});
-  stats=await runner.run(tab.id,sourceId(job.url),job.stage,0,{rescan:true,known:job.known,since:job.since||null,reviewOnly:job.mode==='review',...(selected?{selectedPostIds:job.selected_posts}:{})});
+  stats=await runner.run(tab.id,sourceId(job.url),job.stage,0,{rescan:true,contentRecheck:!!job.content_recheck,known:job.known,since:job.since||null,reviewOnly:job.mode==='review',...(selected?{selectedPostIds:job.selected_posts}:{})});
  }catch(e){if(job.mode==='review')stats=runner?.reviewStats||stats;else stats=runner?.downloadStats||stats;failure=String(e.message||e).replace(/https?:\/\/\S+/g,'[URL removed]');}
  try{
   if(job.mode!=='review'){
@@ -89,11 +89,11 @@ export async function runJob(job){
 }
 async function tick(){
  if(!port)return;
- if(active){if(heartbeatBusy)return;heartbeatBusy=true;try{const result=await nativeRequest({action:'poll',active_job:active.job_id,capabilities:['date_scope','review_results']});if(result.stop&&runner)runner.stop=true}catch{}finally{heartbeatBusy=false}return}
+ if(active){if(heartbeatBusy)return;heartbeatBusy=true;try{const result=await nativeRequest({action:'poll',active_job:active.job_id,capabilities:['date_scope','review_results','file_content_recheck']});if(result.stop&&runner)runner.stop=true}catch{}finally{heartbeatBusy=false}return}
  if(polling)return;polling=true;
  try{
   await navigator.locks.request('duck-vault-downloader',{ifAvailable:true},async lock=>{
-   if(!lock)return;const reply=await nativeRequest({action:'poll',capabilities:['date_scope','review_results']});
+   if(!lock)return;const reply=await nativeRequest({action:'poll',capabilities:['date_scope','review_results','file_content_recheck']});
    if(reply.job)await runJob(reply.job);else status('Connected. Start a Patreon scan from the designer’s download sources in 3DHub.');
   });
  }catch(e){status(e.message)}finally{polling=false}
