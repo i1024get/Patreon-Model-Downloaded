@@ -127,6 +127,7 @@ export class Runner{
   throw Error('Post did not finish loading within 60 seconds');
  }
  knownResource(resource,postId,data,options,includeHistory=false){
+  if(options.contentRecheck)return false;
   if(resource.kind!=='model')return false;
   const identityMatches=k=>resource.identityKind==='patreon_attachment_id'?k.identity_kind==='patreon_attachment_id'&&String(k.attachment_id)===String(resource.attachmentId):k.identity_kind==='filename_fallback'&&k.original_filename===resource.originalFilename&&data.files.filter(f=>f.name===resource.originalFilename).length===1;
   if((options.known||[]).some(k=>String(k.post_id)===postId&&identityMatches(k)))return true;
@@ -166,7 +167,7 @@ export class Runner{
     this.assertRunning();if(limit&&index>=limit)break;
     const post=posts[index];this.currentPostId=post.id;let entry=this.history.posts[post.id];
     this.notify(`${index+1} / ${posts.length}: post ${post.id}`);
-    if(!options.rescan&&options.selectedPostIds===undefined&&await this.postComplete(entry)){entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];await this.save();stats.skipped++;continue}
+    if(!options.contentRecheck&&!options.rescan&&options.selectedPostIds===undefined&&await this.postComplete(entry)){entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];await this.save();stats.skipped++;continue}
     try{
      const data=await this.openPost(post.url);
      if(options.since&&postDateSeconds(data.publishedAt)!==null&&postDateSeconds(data.publishedAt)<options.since){stats.skipped++;continue;}
@@ -182,7 +183,7 @@ export class Runner{
      for(const resource of resources){
       this.assertRunning();if(known(resource))continue;let record=entry.resources.find(r=>resource.identityKind==='patreon_attachment_id'?r.attachmentId===resource.attachmentId:r.key===resource.key);
       try{
-      if(options.rescan&&record?.folder!==folder)record=null;
+      if((options.rescan&&record?.folder!==folder)||(options.contentRecheck&&resource.kind==='model'))record=null;
       if(record){Object.assign(record,{attachmentId:resource.attachmentId,identityKind:resource.identityKind,originalFilename:resource.originalFilename,folder});const item=await this.getDownload(record.downloadId);if(resourceComplete(item,resource.kind)){record.filename=item.filename;record.state='complete';await this.save();continue;}if(item?.state==='in_progress'){const resumed=await this.waitDownload(record.downloadId,resource.kind);record.filename=resumed.filename;record.state='complete';await this.save();continue}}
       const downloadId=await this.api.downloads.download({url:resource.url,filename:resource.filename,conflictAction:'uniquify',saveAs:false});
       // Store only IDs and filenames. Signed attachment/image URLs stay in memory.
