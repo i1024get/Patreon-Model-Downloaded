@@ -16,7 +16,7 @@ $('start').addEventListener('click',async()=>{
    const tabs=await chrome.tabs.query({url:'https://www.patreon.com/*'});let tab=tabs.find(t=>new URL(t.url).pathname.replace(/\/$/,'')===u.pathname.replace(/\/$/,''));
    if(!tab){tab=await chrome.tabs.create({url:u.href,active:true});log('Opened the Patreon page in your regular Chrome. Waiting for it to load.');for(let i=0;i<60;i++){await new Promise(r=>setTimeout(r,1000));tab=await chrome.tabs.get(tab.id);if(tab.status==='complete')break}}
    runner=new Runner(chrome,(message,type)=>log(message,type));const stats=await runner.run(tab.id,collectionId,folder,$('trial').checked?2:0);
-   log(`Finished: ${stats.complete} newly completed · ${stats.skipped} skipped · ${stats.failed} failed · ${stats.noFiles} without 3MF.`);
+   log(`Finished: ${stats.complete} newly completed · ${stats.skipped} skipped · ${stats.failed} failed · ${stats.noFiles} without 3MF or ZIP attachments.`);
   }catch(error){log(String(error.message||error).replace(/https?:\/\/\S+/g,'[URL removed]'),'error')}
   finally{runner=null;setBusy(false);await render()}
  });

@@ -1,5 +1,11 @@
 # Patreon Model Downloader — Chrome extension
 
+## ZIP attachments (v1.5.0)
+
+Discovers ZIP attachments alongside 3MF files. Each ZIP automatically downloads once per Patreon post and attachment identity. Bulk/content-recheck runs skip completed ZIPs after import, moving files, clearing Chrome download history, or staging-folder changes. Failed first downloads remain retryable. In 3DHub Designer Updates, **Re-download ZIP** explicitly downloads just that attachment again. ZIPs remain archives; nothing is extracted.
+
+Install with 3DHub Desktop Agent v1.39. Update/reload the existing unpacked extension in `chrome://extensions` and reopen/reconnect its dashboard; do not remove/reinstall it or clear extension storage, which discards local history. A failed explicit re-download preserves the prior completion record. Run all offline suites with `for test in *tests.mjs; do node "$test" || exit; done` (Bash).
+
 Uses your regular Chrome profile and existing Patreon login. No Python, separate Chrome window, Google sign-in popup, remote-debugging flag, or cookie export is needed.
 
 ## Install once

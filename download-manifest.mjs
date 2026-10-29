@@ -9,7 +9,10 @@ function originalName(resource){return resource.originalFilename||resource.key?.
 export function buildManifest(history,folder,now=new Date().toISOString()){
  const posts=[];
  for(const [id,entry] of Object.entries(history.posts||{})){
-  const resources=(entry.resources||[]).filter(r=>belongs(r,folder));
+  const sameIdentity=(a,b)=>a.kind==='model'&&b.kind==='model'&&a.identityKind===b.identityKind&&(a.attachmentId||a.originalFilename)===(b.attachmentId||b.originalFilename);
+  const completedZips=Object.values(entry.completedZips||{});
+  const retained=(entry.resources||[]).map(r=>r.state!=='complete'&&/\.zip$/i.test(r.originalFilename||r.filename||'')?(completedZips.find(old=>sameIdentity(old,r))||r):r);
+  const resources=[...retained,...completedZips.filter(old=>!retained.some(r=>sameIdentity(old,r)))].filter(r=>belongs(r,folder));
   const completed=r=>r.state==='complete'||(!r.state&&entry.status==='complete');
   const image=resources.find(r=>r.kind==='image'&&completed(r));
   const models=resources.filter(r=>r.kind==='model').map(r=>{

@@ -17,7 +17,19 @@ function scopeBoundary(state,options){
 }
 export class Runner{
  constructor(api,notify=()=>{},sleep=ms=>new Promise(r=>setTimeout(r,ms))){this.api=api;this.notify=notify;this.sleep=sleep;this.stop=false;this.history={version:1,posts:{}};this.worker=null;this.preserveWorker=false}
- async save(){if(this.currentPostId&&this.history.posts[this.currentPostId])this.history.posts[this.currentPostId].updatedAt=new Date().toISOString();await this.api.storage.local.set({history:this.history})}
+ async save(){
+  const entry=this.history.posts[this.currentPostId];
+  if(entry){
+   entry.updatedAt=new Date().toISOString();
+   // Keep fulfilled ZIP identities separate from pending replacement downloads.
+   // A tab/process exit must not turn an explicit retry into a new automatic ZIP.
+   for(const resource of entry.resources||[])if(resource.kind==='model'&&resource.state==='complete'&&/\.zip$/i.test(resource.originalFilename||resource.filename||'')){
+    entry.completedZips=entry.completedZips||{};
+    entry.completedZips[JSON.stringify([resource.identityKind,resource.attachmentId||resource.originalFilename])]=structuredClone(resource);
+   }
+  }
+  await this.api.storage.local.set({history:this.history});
+ }
  assertRunning(){if(this.stop)throw Error('Stopped. Progress is saved; click Start / Resume to continue.')}
  async read(tabId,mode,id){
   const results=await this.api.scripting.executeScript({target:{tabId},func:inspectPage,args:[mode,id]});const state=results[0]?.result;
@@ -127,11 +139,15 @@ export class Runner{
   throw Error('Post did not finish loading within 60 seconds');
  }
  knownResource(resource,postId,data,options,includeHistory=false){
-  if(options.contentRecheck)return false;
   if(resource.kind!=='model')return false;
+  const zip=/\.zip$/i.test(resource.originalFilename||resource.filename||'');
+  const target=options.zipRedownload;
+  if(zip&&target&&target.postId===postId&&target.identityKind===resource.identityKind&&target.attachmentId===resource.attachmentId)return false;
+  if(options.contentRecheck&&!zip)return false;
   const identityMatches=k=>resource.identityKind==='patreon_attachment_id'?k.identity_kind==='patreon_attachment_id'&&String(k.attachment_id)===String(resource.attachmentId):k.identity_kind==='filename_fallback'&&k.original_filename===resource.originalFilename&&data.files.filter(f=>f.name===resource.originalFilename).length===1;
   if((options.known||[]).some(k=>String(k.post_id)===postId&&identityMatches(k)))return true;
-  return includeHistory&&(this.history.posts[postId]?.resources||[]).some(r=>r.kind==='model'&&r.state==='complete'&&identityMatches({identity_kind:r.identityKind,attachment_id:r.attachmentId,original_filename:r.originalFilename}));
+  const entry=this.history.posts[postId];
+  return (includeHistory||zip)&&[...(entry?.resources||[]),...(zip?Object.values(entry?.completedZips||{}):[])].some(r=>r.kind==='model'&&r.state==='complete'&&identityMatches({identity_kind:r.identityKind,attachment_id:r.attachmentId,original_filename:r.originalFilename}));
  }
  async review(posts,folder,limit,options){
   const stats=this.reviewStats={complete:0,skipped:0,failed:0,noFiles:0,models:[]};
@@ -157,6 +173,10 @@ export class Runner{
   const stored=await this.api.storage.local.get('history');this.history=stored.history||{version:1,posts:{}};
   if(!this.history.posts||typeof this.history.posts!=='object')throw Error('Invalid stored download history');
   if(options.selectedPostIds!==undefined&&(!Array.isArray(options.selectedPostIds)||options.selectedPostIds.some(id=>typeof id!=='string'||!/^\d+$/.test(id))))throw Error('Invalid selected post ID');
+  if(options.zipRedownload){
+   const t=options.zipRedownload;
+   if(options.reviewOnly||options.selectedPostIds?.length!==1||options.selectedPostIds[0]!==t.postId||!['patreon_attachment_id','filename_fallback'].includes(t.identityKind)||typeof t.attachmentId!=='string'||!t.attachmentId)throw Error('Choose one reviewed ZIP attachment to re-download.');
+  }
   const posts=options.selectedPostIds!==undefined?[...new Set(options.selectedPostIds)].map(id=>({id,url:'https://www.patreon.com/posts/'+id})):await this.collect(collectionTab,collectionId,options);
   if(options.reviewOnly)return this.review(posts,folder,limit,options);
   await this.api.storage.local.set({lastCollection:{collectionId,posts,folder}});
@@ -172,18 +192,25 @@ export class Runner{
      const data=await this.openPost(post.url);
      if(options.since&&postDateSeconds(data.publishedAt)!==null&&postDateSeconds(data.publishedAt)<options.since){stats.skipped++;continue;}
      if(data.locked&&!data.files.length)throw Error('This post is locked for your current Patreon account');
-     if(!data.files.length){this.history.posts[post.id]={status:'no_3mf',title:data.title,resources:[]};await this.save();stats.noFiles++;continue}
+     if(!data.files.length){this.history.posts[post.id]={...entry,status:'no_3mf',title:data.title,resources:entry?.resources||[]};await this.save();stats.noFiles++;continue}
      entry=entry||{resources:[]};entry.resources=entry.resources||[];entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];entry.postId=post.id;entry.provider='patreon';entry.title=data.title;entry.status='partial';delete entry.error;
      this.history.posts[post.id]=entry;await this.save();
-     const resources=downloadResources(data,post.id,folder);
+     let resources=downloadResources(data,post.id,folder);
+     if(options.zipRedownload){
+      const t=options.zipRedownload;
+      resources=resources.filter(r=>r.kind==='model'&&/\.zip$/i.test(r.originalFilename)&&r.identityKind===t.identityKind&&r.attachmentId===t.attachmentId);
+      if(resources.length!==1)throw Error('The selected ZIP attachment is no longer available. Check the post again.');
+     }
      const known=resource=>this.knownResource(resource,post.id,data,options);
      if(resources.filter(r=>r.kind==='model').every(known)){entry.status='complete';await this.save();stats.skipped++;stats.downloaded_post_ids?.push(post.id);continue}
      const errors=[];entry.warnings=resources.some(r=>r.kind==='image')?[]:['No product image available; models downloaded without an image.'];
      if(entry.warnings.length)this.notify(entry.warnings[0]);
      for(const resource of resources){
       this.assertRunning();if(known(resource))continue;let record=entry.resources.find(r=>resource.identityKind==='patreon_attachment_id'?r.attachmentId===resource.attachmentId:r.key===resource.key);
+      const completed=options.zipRedownload&&(record?.state==='complete'?record:Object.values(entry.completedZips||{}).find(r=>r.identityKind===resource.identityKind&&r.attachmentId===resource.attachmentId));
+      const previous=completed?structuredClone(completed):null;
       try{
-      if((options.rescan&&record?.folder!==folder)||(options.contentRecheck&&resource.kind==='model'))record=null;
+      if(options.zipRedownload||(options.rescan&&record?.folder!==folder)||(options.contentRecheck&&resource.kind==='model'))record=null;
       if(record){Object.assign(record,{attachmentId:resource.attachmentId,identityKind:resource.identityKind,originalFilename:resource.originalFilename,folder});const item=await this.getDownload(record.downloadId);if(resourceComplete(item,resource.kind)){record.filename=item.filename;record.state='complete';await this.save();continue;}if(item?.state==='in_progress'){const resumed=await this.waitDownload(record.downloadId,resource.kind);record.filename=resumed.filename;record.state='complete';await this.save();continue}}
       const downloadId=await this.api.downloads.download({url:resource.url,filename:resource.filename,conflictAction:'uniquify',saveAs:false});
       // Store only IDs and filenames. Signed attachment/image URLs stay in memory.
@@ -191,9 +218,10 @@ export class Runner{
       entry.resources=entry.resources.filter(r=>r.key!==resource.key);entry.resources.push(record);await this.save();
       const downloaded=await this.waitDownload(downloadId,resource.kind);record.filename=downloaded.filename;record.state='complete';delete record.error;await this.save();
       }catch(error){
-       if(this.stop)throw error;
        const message=String(error.message||error).replace(/https?:\/\/\S+/g,'[URL removed]');
-       if(record){record.state='interrupted';record.error=message;await this.save()}
+       if(previous){entry.resources=entry.resources.filter(r=>r!==record&&r.key!==previous.key);entry.resources.push(previous);await this.save();}
+       else if(record){record.state='interrupted';record.error=message;await this.save()}
+       if(this.stop)throw error;
        errors.push(resource.kind+': '+(resource.originalFilename||'image')+' — '+message);
        this.notify(errors.at(-1),'error');
       }

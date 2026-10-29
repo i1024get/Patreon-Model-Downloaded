@@ -16,16 +16,17 @@ export function resourceComplete(item,kind){return !!item&&item.state==='complet
 export function downloadResources(post,id,folder){
  if(!/^\d+$/.test(id))throw Error('Invalid post ID');
  if(!folder||folder!==safeName(folder)||folder.includes('..'))throw Error('Use a folder name, not an absolute path');
- const files=post.files.filter(f=>/\.3mf$/i.test(f.name));
+ const files=post.files.filter(f=>/\.(3mf|zip)$/i.test(f.name));
  const resources=files.map((f,index)=>{
   const u=new URL(f.url);if(u.protocol!=='https:'||u.hostname!=='www.patreon.com'||u.pathname!=='/file')throw Error('Attachment link is not a Patreon file URL');
-  const stem=safeName(f.name.replace(/\.3mf$/i,''));
-  return {...attachmentIdentity(u.href,f.name),originalFilename:f.name,key:`model:${index}:${f.name}`,kind:'model',url:u.href,filename:`${folder}/${stem} - Patreon ${id}${index?` - ${index+1}`:''}.3mf`};
+  const ext=f.name.match(/\.(3mf|zip)$/i)[1].toLowerCase();
+  const stem=safeName(f.name.replace(/\.(3mf|zip)$/i,''));
+  return {...attachmentIdentity(u.href,f.name),originalFilename:f.name,key:`model:${index}:${f.name}`,kind:'model',url:u.href,filename:`${folder}/${stem} - Patreon ${id}${index?` - ${index+1}`:''}.${ext}`};
  });
  if(resources.length&&post.images.length){
   const u=new URL(post.images[0]);if(u.protocol!=='https:'||!(u.hostname.endsWith('.patreonusercontent.com')||u.hostname.endsWith('.patreon.com')||u.hostname==='www.patreon.com'))throw Error('Gallery image host is not Patreon');
   const ext=u.pathname.match(/\.(png|jpe?g|webp|avif)(?:$|\/)/i)?.[1]?.toLowerCase()||'jpg';
-  resources.push({key:'image',kind:'image',url:u.href,filename:resources[0].filename.replace(/\.3mf$/i,'.'+ext)});
+  resources.push({key:'image',kind:'image',url:u.href,filename:resources[0].filename.replace(/\.(3mf|zip)$/i,'.'+ext)});
  }
  return resources;
 }
@@ -88,7 +89,7 @@ export function inspectPage(mode,collectionId){
   if(!button||button.disabled)return {clicked:false};button.click();return {clicked:true};
  }
  const title=[...document.querySelectorAll('h1[data-tag="post-title"]')].map(n=>n.textContent.trim()).find(Boolean)||'';
- const files=[...document.querySelectorAll('a[data-tag="post-attachment-link"]')].map(a=>({name:a.textContent.trim(),url:a.href})).filter(a=>/\.3mf$/i.test(a.name));
+ const files=[...document.querySelectorAll('a[data-tag="post-attachment-link"]')].map(a=>({name:a.textContent.trim(),url:a.href})).filter(a=>/\.(3mf|zip)$/i.test(a.name));
  const gallery=[...document.querySelectorAll('img[data-tag="gallery-image"]')];
  // Some image posts embed the product in rich text rather than a gallery.
  const candidates=gallery.length?gallery:[...document.querySelectorAll('.patreon-post-content figure img')];

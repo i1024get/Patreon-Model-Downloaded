@@ -44,3 +44,14 @@ Runner.prototype.run=async function(){this.stop=true;this.downloadStats={downloa
 await bridge.runJob({job_id:'stopped-transfer',url:'https://www.patreon.com/collection/1',stage:'Stage',mode:'download',selected_posts:['1','2']});
 const stoppedTransfer=calls.find(c=>c.action==='finish'&&c.job_id==='stopped-transfer');assert.equal(stoppedTransfer.status,'stopped');assert.deepEqual(stoppedTransfer.result.downloaded_post_ids,['1']);assert.deepEqual(stoppedTransfer.result.failed_post_ids,[]);
 console.log('Transfer failure exposes no successes; stopped partial successful transfer preserves completed IDs passed');
+// The dedicated action carries one target through the native bridge to the runner.
+Runner.prototype.run=async(a,b,c,d,o)=>{options=o;return {downloaded_post_ids:['1'],failed_post_ids:[],complete:1,failed:0}};
+const zipTarget={postId:'1',attachmentId:'11',identityKind:'patreon_attachment_id'};
+chrome.storage.local.get=async()=>({history:{posts:{'1':{status:'complete',resources:[
+ {kind:'model',state:'complete',folder:'Stage',filename:'Stage/Chosen.3mf',downloadId:1,attachmentId:'12',identityKind:'patreon_attachment_id',originalFilename:'Chosen.3mf'},
+ {kind:'model',state:'complete',folder:'Stage',filename:'Stage/Bundle.zip',downloadId:2,attachmentId:'11',identityKind:'patreon_attachment_id',originalFilename:'Bundle.zip'}]}}}});
+chrome.downloads.search=async({id})=>[{state:'complete',exists:true,bytesReceived:100,filename:id===2?'Stage/Bundle.zip':'Stage/Chosen.3mf'}];
+await bridge.runJob({job_id:'zip-retry',url:'https://www.patreon.com/collection/1',stage:'Stage',mode:'download',selected_posts:['1'],zip_redownload:zipTarget});
+assert.deepEqual(options.zipRedownload,zipTarget);
+assert(calls.find(c=>c.action==='poll').capabilities.includes('zip_attachments'));
+assert.deepEqual(calls.find(c=>c.action==='ingest'&&c.job_id==='zip-retry').files.map(f=>f.filename),['Bundle.zip'],'ZIP-only retries cannot ingest unrelated staged models');
