@@ -55,3 +55,17 @@ await bridge.runJob({job_id:'zip-retry',url:'https://www.patreon.com/collection/
 assert.deepEqual(options.zipRedownload,zipTarget);
 assert(calls.find(c=>c.action==='poll').capabilities.includes('zip_attachments'));
 assert.deepEqual(calls.find(c=>c.action==='ingest'&&c.job_id==='zip-retry').files.map(f=>f.filename),['Bundle.zip'],'ZIP-only retries cannot ingest unrelated staged models');
+// Scoped individual sources must not open the target post before the date gate.
+const openedUrls=[],closedTabs=[];
+chrome.tabs.create=async options=>{openedUrls.push(options.url);return {id:42}};chrome.tabs.remove=async id=>closedTabs.push(id);
+Runner.prototype.run=async(a,b,c,d,o)=>{options=o;return {models:[],scope_unresolved:1,scope_excluded:0,failed:0}};
+await bridge.runJob({job_id:'scoped-post',url:'https://www.patreon.com/posts/123',stage:'Stage',mode:'review',since:123});
+assert.deepEqual(openedUrls,['https://www.patreon.com/']);assert.deepEqual(closedTabs,[42]);
+assert.equal(calls.find(c=>c.action==='finish'&&c.job_id==='scoped-post').status,'partial');
+assert(calls.find(c=>c.action==='poll').capabilities.includes('strict_date_scope'));
+Runner.prototype.run=async(a,b,c,d,o)=>{options=o;return {models:[],failed:0}};
+chrome.storage.local.get=async()=>({history:{posts:{}}});
+await bridge.runJob({job_id:'scoped-selection',url:'https://www.patreon.com/collection/1',stage:'Stage',mode:'download',since:123,selected_posts:['1'],selected_post_dates:{'1':124}});
+assert.equal(options.since,123);assert.deepEqual(options.publicationDates,{'1':124});assert.deepEqual(options.selectedPostIds,['1']);
+console.log('Scoped single-post source avoids target navigation and unresolved dates finish as partial');
+

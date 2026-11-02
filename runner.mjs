@@ -1,12 +1,13 @@
 import {exportManifest} from './download-manifest.mjs';
 import {postId,sourceUrl,downloadResources,resourceComplete,inspectPage} from './core.mjs';
+import {readPostPublication} from './publication.mjs';
 export function postDateSeconds(value){
- if(value==null||value==='')return null;
+ if(value==null||value===''||typeof value==='boolean')return null;
  const numeric=Number(value);if(Number.isFinite(numeric)&&numeric>0)return numeric>1e12?numeric/1000:numeric;
  if(!/\b\d{4}\b/.test(String(value)))return null;
  const ms=Date.parse(value);return Number.isFinite(ms)?ms/1000:null;
 }
-export function scopePosts(posts,options={}){return options.since?posts.filter(p=>{const date=postDateSeconds(p.publishedAt);return date===null||date>=options.since;}):posts;}
+export function scopePosts(posts,options={}){return options.since?posts.filter(p=>{const date=postDateSeconds(p.publishedAt);return date!==null&&date>=options.since&&date<=Date.now()/1000+60;}):posts;}
 function scopeBoundary(state,options){
  if(!options.since||!state.newestFirst||state.loading)return false;
  const cards=[...new Map((state.links||[]).filter(p=>!p.pinned).map(p=>[postId(p.url),p])).values()];
@@ -30,6 +31,18 @@ export class Runner{
   }
   await this.api.storage.local.set({history:this.history});
  }
+ filterScope(posts,options){
+  if(!options.since)return posts;
+  this.scopedRun=true;
+  this.scopeUnknown??=new Set();this.scopeOld??=new Set();
+  for(const post of posts){
+   const date=postDateSeconds(post.publishedAt);
+   if(date===null)this.scopeUnknown.add(post.id||postId(post.url));
+   else if(date<options.since||date>Date.now()/1000+60)this.scopeOld.add(post.id||postId(post.url));
+  }
+  return scopePosts(posts,options);
+ }
+ scopeCounts(){return this.scopedRun?{scope_unresolved:this.scopeUnknown?.size||0,scope_excluded:this.scopeOld?.size||0}:{};}
  assertRunning(){if(this.stop)throw Error('Stopped. Progress is saved; click Start / Resume to continue.')}
  async read(tabId,mode,id){
   const results=await this.api.scripting.executeScript({target:{tabId},func:inspectPage,args:[mode,id]});const state=results[0]?.result;
@@ -39,7 +52,7 @@ export class Runner{
   return state;
  }
  async collectFeed(tabId,id,options={}){
-  const posts=new Map(),probed=new Set();let idle=0,empty=0,orderWaits=0;
+  const posts=new Map();let idle=0,empty=0,orderWaits=0,dateWaits=0;
   while(true){
    this.assertRunning();const state=await this.read(tabId,'feed',id);const before=posts.size;
    for(const link of state.links){const key=postId(link.url);if(key)posts.set(key,{...link,id:key,url:link.url,publishedAt:link.publishedAt||posts.get(key)?.publishedAt||null})}
@@ -51,19 +64,19 @@ export class Runner{
     this.notify('Waiting for Patreon feed ordering to finish loading…');
     await this.sleep(1000);continue;
    }
-   if(options.since&&state.newestFirst&&!state.loading){
-    const boundary=[...new Map(state.links.filter(p=>!p.pinned).map(p=>[postId(p.url),p])).values()].slice(-2);
-    if(boundary.length===2)for(const card of boundary){
-     const key=postId(card.url),post=posts.get(key);if(!post||postDateSeconds(post.publishedAt)!==null||probed.has(key))continue;
-     this.assertRunning();probed.add(key);this.notify('Checking publication date at the scope boundary…');
-     const data=await this.openPost(card.url);if(postDateSeconds(data.publishedAt)!==null)post.publishedAt=data.publishedAt;
-    }
+   if(options.since&&!state.loading&&state.links.some(link=>!link.pinned&&postDateSeconds(posts.get(postId(link.url))?.publishedAt)===null)){
+    // Allow listing metadata to hydrate, but never open undated posts or
+    // scroll an unverified boundary into weeks of historical cards.
+    if(dateWaits++<3){this.notify('Waiting for publication dates in Patreon listing metadata…');await this.sleep(1000);continue;}
+    this.notify('Incomplete date-scoped check: some listing dates could not be verified. Use All time to inspect undated posts.');
+    return this.filterScope([...posts.values()],options);
    }
+   dateWaits=0;
    const datedState={...state,links:state.links.map(link=>({...link,publishedAt:posts.get(postId(link.url))?.publishedAt||link.publishedAt}))};
-   if(scopeBoundary(datedState,options)){this.notify('Reached the date cutoff; older feed posts will not be loaded.');return scopePosts([...posts.values()],options);}
+   if(scopeBoundary(datedState,options)){this.notify('Reached the date cutoff; older feed posts will not be loaded.');return this.filterScope([...posts.values()],options);}
    if(!posts.size){if(++empty>=60)throw Error('No creator post cards found after 60 seconds. Keep the feed open and check that posts are visible.');}
    else if(posts.size>before)idle=0;
-   else if(!state.loading&&!state.more){if(++idle>=10)return scopePosts([...posts.values()],options)}
+   else if(!state.loading&&!state.more){if(++idle>=10)return this.filterScope([...posts.values()],options)}
    else {idle=0;if(++empty>=120)throw Error('Creator feed loading stalled. Downloads have not started.');}
    if(posts.size>before)empty=0;
    await this.read(tabId,'feedAdvance',id);await this.sleep(1000);
@@ -73,7 +86,12 @@ export class Runner{
   if(id.startsWith('post:')){
    this.assertRunning();
    if(!/^post:[1-9][0-9]{0,29}$/.test(id))throw Error('Invalid Patreon post source');
-   return [{id:id.slice(5),url:sourceUrl(id)}];
+   const post={id:id.slice(5),url:sourceUrl(id)};
+   if(options.since){
+    try{const result=await this.api.scripting.executeScript({target:{tabId},func:readPostPublication,args:[post.id]});post.publishedAt=result[0]?.result?.publishedAt??null;}
+    catch(error){this.notify('Publication date could not be verified: '+String(error.message||error).replace(/https?:\/\/\S+/g,'[URL removed]'));}
+   }
+   return this.filterScope([post],options);
   }
   if(id.startsWith('feed:'))return this.collectFeed(tabId,id,options);
   const posts=new Map();let expected=null;let emptyAttempts=0;
@@ -94,7 +112,7 @@ export class Runner{
      if(posts.size<expected)throw Error(`Only ${posts.size} of ${expected} posts found. Downloads have not started.`);
     }
     if(!posts.size)throw Error('No collection posts found. Open the collection and wait until its cards appear.');
-    return scopePosts([...posts.values()],options);
+    return this.filterScope([...posts.values()],options);
    }
    const before=posts.size;
    if(!state.loading)await this.read(tabId,'loadMore',id);
@@ -155,7 +173,8 @@ export class Runner{
   return (includeHistory||zip)&&[...(entry?.resources||[]),...(zip?Object.values(entry?.completedZips||{}):[])].some(r=>r.kind==='model'&&r.state==='complete'&&identityMatches({identity_kind:r.identityKind,attachment_id:r.attachmentId,original_filename:r.originalFilename}));
  }
  async review(posts,folder,limit,options){
-  const stats=this.reviewStats={complete:0,skipped:0,failed:0,noFiles:0,models:[]};
+  posts=this.filterScope(posts,options);
+  const stats=this.reviewStats={complete:0,skipped:0,failed:0,noFiles:0,models:[],...this.scopeCounts()};
   try{
    for(const post of (limit?posts.slice(0,limit):posts)){
     this.assertRunning();let model={id:post.id,title:post.title||'Post '+post.id,published_at:post.publishedAt||null,image_url:null,profile_id:null,attachment_count:0,attachments:[],download_state:'error'};
@@ -165,7 +184,7 @@ export class Runner{
      const resources=downloadResources(data,post.id,folder).filter(r=>r.kind==='model');
      const attachments=resources.map(r=>({attachment_id:r.attachmentId,identity_kind:r.identityKind,original_filename:r.originalFilename,download_state:this.knownResource(r,post.id,data,options,true)?'downloaded':'new'}));
      const knownCount=attachments.filter(a=>a.download_state==='downloaded').length;
-     model={...model,title:data.title,published_at:data.publishedAt||post.publishedAt||null,image_url:data.images?.[0]||null,profile_id:resources.length?'post':null,attachment_count:resources.length,attachments,download_state:resources.length?(knownCount===resources.length?'downloaded':knownCount?'updated':'new'):data.locked?'locked':'no_files'};
+     model={...model,title:data.title,published_at:postDateSeconds(data.publishedAt)??postDateSeconds(post.publishedAt),image_url:data.images?.[0]||null,profile_id:resources.length?'post':null,attachment_count:resources.length,attachments,download_state:resources.length?(knownCount===resources.length?'downloaded':knownCount?'updated':'new'):data.locked?'locked':'no_files'};
      if(model.download_state==='downloaded')stats.skipped++;else if(model.download_state==='no_files')stats.noFiles++;else if(model.download_state==='locked')stats.failed++;else stats.complete++;
     }catch(error){model.error=String(error.message||error).replace(/https?:\/\/\S+/g,'[URL removed]');stats.failed++;if(this.stop||/security verification|sign-in is required/i.test(model.error)){stats.models.push(model);throw error}}
     stats.models.push(model);this.notify('Reviewed post '+post.id);await this.sleep(1500);
@@ -174,8 +193,10 @@ export class Runner{
   }finally{if(this.worker!==null&&!this.stop&&!this.preserveWorker)try{await this.api.tabs.remove(this.worker)}catch{}}
  }
  async run(collectionTab,collectionId,folder,limit=0,options={}){
-  // A saved post may gain attachments long after its publication date.
-  if(collectionId.startsWith('post:'))options={...options,since:null,rescan:true};
+  if(collectionId.startsWith('post:'))options={...options,rescan:true};
+  if(options.since!=null&&(!Number.isFinite(options.since)||options.since<=0))throw Error('Invalid date scope cutoff');
+  this.scopeUnknown=new Set();this.scopeOld=new Set();
+  this.scopedRun=options.since!=null;
   this.reviewStats=options.reviewOnly?{complete:0,skipped:0,failed:0,noFiles:0,models:[]}:null;
   const stored=await this.api.storage.local.get('history');this.history=stored.history||{version:1,posts:{}};
   if(!this.history.posts||typeof this.history.posts!=='object')throw Error('Invalid stored download history');
@@ -184,10 +205,11 @@ export class Runner{
    const t=options.zipRedownload;
    if(options.reviewOnly||options.selectedPostIds?.length!==1||options.selectedPostIds[0]!==t.postId||!['patreon_attachment_id','filename_fallback'].includes(t.identityKind)||typeof t.attachmentId!=='string'||!t.attachmentId)throw Error('Choose one reviewed ZIP attachment to re-download.');
   }
-  const posts=options.selectedPostIds!==undefined?[...new Set(options.selectedPostIds)].map(id=>({id,url:'https://www.patreon.com/posts/'+id})):await this.collect(collectionTab,collectionId,options);
+  const candidates=options.selectedPostIds!==undefined?[...new Set(options.selectedPostIds)].map(id=>({id,url:'https://www.patreon.com/posts/'+id,publishedAt:options.publicationDates?.[id]??null})):await this.collect(collectionTab,collectionId,options);
+  const posts=this.filterScope(candidates,options);
   if(options.reviewOnly)return this.review(posts,folder,limit,options);
   await this.api.storage.local.set({lastCollection:{collectionId,posts,folder}});
-  const stats=this.downloadStats={complete:0,skipped:0,failed:0,noFiles:0};
+  const stats=this.downloadStats={complete:0,skipped:0,failed:0,noFiles:0,...this.scopeCounts()};
   if(options.selectedPostIds!==undefined){stats.downloaded_post_ids=[];stats.failed_post_ids=[];}
   try{
    for(let index=0;index<posts.length;index++){
@@ -251,5 +273,6 @@ export class Runner{
   }
  }
 }
+
 
 

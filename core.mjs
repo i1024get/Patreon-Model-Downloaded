@@ -36,10 +36,11 @@ export function downloadResources(post,id,folder){
 // Self-contained because Chrome serializes this function into the Patreon tab.
 export function inspectPage(mode,collectionId){
  const text=document.body?.innerText||'';
+ const preciseDate=value=>typeof value==='string'&&/\b\d{4}\b/.test(value)&&/\d{1,2}:\d{2}/.test(value)&&Number.isFinite(Date.parse(value))?value.trim():null;
  const postDates=new Map();let visited=0;
  const visit=value=>{
   if(++visited>50000||!value||typeof value!=='object')return;
-  if(value.type==='post'&&value.id&&value.attributes?.published_at)postDates.set(String(value.id),value.attributes.published_at);
+  if(value.type==='post'&&value.id&&preciseDate(value.attributes?.published_at))postDates.set(String(value.id),preciseDate(value.attributes.published_at));
   for(const child of Object.values(value))if(child&&typeof child==='object')visit(child);
  };
  for(const script of document.querySelectorAll('script:not([src])')){
@@ -57,9 +58,9 @@ export function inspectPage(mode,collectionId){
   if(!card)return null;
   const time=card.querySelector?.('time[datetime], [data-tag="post-published-at"], [data-tag="post-published-date"]');
   const value=time?.getAttribute?.('datetime')||time?.getAttribute?.('data-published-at')||time?.getAttribute?.('title')||time?.textContent||'';
-  return /\b\d{4}\b/.test(value)?value.trim():null;
+  return preciseDate(value);
  };
- const linkInfo=a=>{const card=a.closest?.('[data-tag="post-card"]');return {url:a.href,title:a.innerText||a.textContent||'',publishedAt:cardDate(card)||postDates.get(a.href.match(/(?:^|\/)(?:[^/]*-)?(\d+)(?:[?/#]|$)/)?.[1])||null,pinned:!!card&&(!!card.querySelector?.('[aria-label*="Pinned"], [title*="Pinned"]')||/^pinned\b/i.test(card.innerText?.trim()||''))};};
+ const linkInfo=a=>{const card=a.closest?.('[data-tag="post-card"]');return {url:a.href,title:a.innerText||a.textContent||'',publishedAt:postDates.get(a.href.match(/(?:^|\/)(?:[^/]*-)?(\d+)(?:[?/#]|$)/)?.[1])||cardDate(card)||null,pinned:!!card&&(!!card.querySelector?.('[aria-label*="Pinned"], [title*="Pinned"]')||/^pinned\b/i.test(card.innerText?.trim()||''))};};
  const newestFirst=[...document.querySelectorAll('select option:checked, [aria-selected="true"], [aria-checked="true"], button[aria-haspopup], [data-tag="posts-sort-button"]')].some(el=>/^(newest|newest first|most recent)$/i.test(el.textContent.trim()));
 
  const blocked=/just a moment/i.test(document.title)||/performing security verification|verify you are human|checking your browser/i.test(text.slice(0,6000));
@@ -103,4 +104,5 @@ export function inspectPage(mode,collectionId){
  const publishedDate=typeof metadataDate==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(metadataDate)&&Number.isFinite(Date.parse(metadataDate))?metadataDate:null;
  return {publishedAt:postDates.get(location.pathname.match(/(?:^|\/)(?:[^/]*-)?(\d+)\/?$/)?.[1])||publishedDate||cardDate(document),title,files,images:[...new Set(images)],locked:/join to unlock|unlock this post|this post is locked/i.test(text),ready:!!title};
 }
+
 
