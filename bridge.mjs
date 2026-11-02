@@ -93,11 +93,11 @@ export async function runJob(job){
 }
 async function tick(){
  if(!port)return;
- if(active){if(heartbeatBusy)return;heartbeatBusy=true;try{const result=await nativeRequest({action:'poll',active_job:active.job_id,capabilities:['date_scope','review_results','file_content_recheck','zip_attachments']});if(result.stop&&runner)runner.stop=true}catch{}finally{heartbeatBusy=false}return}
+ if(active){if(heartbeatBusy)return;heartbeatBusy=true;try{const result=await nativeRequest({action:'poll',active_job:active.job_id,capabilities:['date_scope','review_results','file_content_recheck','zip_attachments','single_post_sources']});if(result.stop&&runner)runner.stop=true}catch{}finally{heartbeatBusy=false}return}
  if(polling)return;polling=true;
  try{
   await navigator.locks.request('duck-vault-downloader',{ifAvailable:true},async lock=>{
-   if(!lock)return;const reply=await nativeRequest({action:'poll',capabilities:['date_scope','review_results','file_content_recheck','zip_attachments']});
+   if(!lock)return;const reply=await nativeRequest({action:'poll',capabilities:['date_scope','review_results','file_content_recheck','zip_attachments','single_post_sources']});
    if(reply.job)await runJob(reply.job);else status('Connected. Start a Patreon scan from the designer’s download sources in 3DHub.');
   });
  }catch(e){status(e.message)}finally{polling=false}
@@ -108,3 +108,4 @@ if(typeof document!=='undefined'){
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&reconnectEnabled){if(!port)connect();else tick();}});
  // The background worker delivers bridge_tick events even while this tab is hidden.
 }
+
