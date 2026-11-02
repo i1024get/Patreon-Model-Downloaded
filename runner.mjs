@@ -1,5 +1,5 @@
 import {exportManifest} from './download-manifest.mjs';
-import {postId,downloadResources,resourceComplete,inspectPage} from './core.mjs';
+import {postId,sourceUrl,downloadResources,resourceComplete,inspectPage} from './core.mjs';
 export function postDateSeconds(value){
  if(value==null||value==='')return null;
  const numeric=Number(value);if(Number.isFinite(numeric)&&numeric>0)return numeric>1e12?numeric/1000:numeric;
@@ -70,6 +70,11 @@ export class Runner{
   }
  }
  async collect(tabId,id,options={}){
+  if(id.startsWith('post:')){
+   this.assertRunning();
+   if(!/^post:[1-9][0-9]{0,29}$/.test(id))throw Error('Invalid Patreon post source');
+   return [{id:id.slice(5),url:sourceUrl(id)}];
+  }
   if(id.startsWith('feed:'))return this.collectFeed(tabId,id,options);
   const posts=new Map();let expected=null;let emptyAttempts=0;
   while(true){
@@ -169,6 +174,8 @@ export class Runner{
   }finally{if(this.worker!==null&&!this.stop&&!this.preserveWorker)try{await this.api.tabs.remove(this.worker)}catch{}}
  }
  async run(collectionTab,collectionId,folder,limit=0,options={}){
+  // A saved post may gain attachments long after its publication date.
+  if(collectionId.startsWith('post:'))options={...options,since:null,rescan:true};
   this.reviewStats=options.reviewOnly?{complete:0,skipped:0,failed:0,noFiles:0,models:[]}:null;
   const stored=await this.api.storage.local.get('history');this.history=stored.history||{version:1,posts:{}};
   if(!this.history.posts||typeof this.history.posts!=='object')throw Error('Invalid stored download history');
@@ -187,13 +194,13 @@ export class Runner{
     this.assertRunning();if(limit&&index>=limit)break;
     const post=posts[index];this.currentPostId=post.id;let entry=this.history.posts[post.id];
     this.notify(`${index+1} / ${posts.length}: post ${post.id}`);
-    if(!options.contentRecheck&&!options.rescan&&options.selectedPostIds===undefined&&await this.postComplete(entry)){entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];await this.save();stats.skipped++;continue}
+    if(!options.contentRecheck&&!options.rescan&&options.selectedPostIds===undefined&&await this.postComplete(entry)){entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),sourceUrl(collectionId)])];await this.save();stats.skipped++;continue}
     try{
      const data=await this.openPost(post.url);
      if(options.since&&postDateSeconds(data.publishedAt)!==null&&postDateSeconds(data.publishedAt)<options.since){stats.skipped++;continue;}
      if(data.locked&&!data.files.length)throw Error('This post is locked for your current Patreon account');
      if(!data.files.length){this.history.posts[post.id]={...entry,status:'no_3mf',title:data.title,resources:entry?.resources||[]};await this.save();stats.noFiles++;continue}
-     entry=entry||{resources:[]};entry.resources=entry.resources||[];entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),collectionId.startsWith('feed:')?'https://www.patreon.com'+collectionId.slice(5):'https://www.patreon.com/collection/'+collectionId])];entry.postId=post.id;entry.provider='patreon';entry.title=data.title;entry.status='partial';delete entry.error;
+     entry=entry||{resources:[]};entry.resources=entry.resources||[];entry.sourceUrls=[...new Set([...(entry.sourceUrls||[]),sourceUrl(collectionId)])];entry.postId=post.id;entry.provider='patreon';entry.title=data.title;entry.status='partial';delete entry.error;
      this.history.posts[post.id]=entry;await this.save();
      let resources=downloadResources(data,post.id,folder);
      if(options.zipRedownload){
@@ -244,4 +251,5 @@ export class Runner{
   }
  }
 }
+
 

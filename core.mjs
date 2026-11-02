@@ -1,17 +1,20 @@
 import {attachmentIdentity} from './download-manifest.mjs';
 export function sourceId(value){
- const u=new URL(value);if(u.origin!=='https://www.patreon.com')throw Error('Enter a Patreon collection or creator posts URL');
- const path=u.pathname.replace(/\/$/,'');
+ const u=new URL(value);if(u.origin!=='https://www.patreon.com'||u.username||u.password)throw Error('Enter a Patreon post, collection or creator posts URL');
+ const path=u.pathname.replace(/\/+$/,'');
+ const post=path.match(/^\/(?:(?:(?:c|cw)\/)?[A-Za-z0-9_.-]+\/)?posts\/(?:[A-Za-z0-9_.-]+-)?([1-9][0-9]{0,29})$/);
+ if(post)return 'post:'+post[1];
  if(/^\/collection\/\d+$/.test(path))return path.split('/').pop();
  if(/^\/(?:c|cw)\/[^/]+\/posts$/.test(path))return 'feed:'+path;
- throw Error('Enter a Patreon collection or creator posts URL');
+ throw Error('Enter a Patreon post, collection or creator posts URL');
 }
+export function sourceUrl(id){return 'https://www.patreon.com'+(id.startsWith('post:')?'/posts/'+id.slice(5):id.startsWith('feed:')?id.slice(5):'/collection/'+id);}
 export function safeName(input){
  let value=String(input||'Model').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/^\.+|[. ]+$/g,'').trim().slice(0,140)||'Model';
  if(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(value))value='_'+value;
  return value;
 }
-export function postId(url){try{const u=new URL(url);return u.protocol==='https:'&&u.hostname==='www.patreon.com'?(u.pathname.match(/^\/(?:[^/]+\/)?posts\/(?:[^/]*-)?(\d+)\/?$/)?.[1]||''):''}catch{return ''}}
+export function postId(url){try{const id=sourceId(url);return id.startsWith('post:')?id.slice(5):''}catch{return ''}}
 export function resourceComplete(item,kind){return !!item&&item.state==='complete'&&item.exists!==false&&item.bytesReceived>0&&!/^(text\/|application\/json)/i.test(item.mime||'')&&(kind!=='image'||!item.mime||item.mime.startsWith('image/'))}
 export function downloadResources(post,id,folder){
  if(!/^\d+$/.test(id))throw Error('Invalid post ID');
@@ -100,3 +103,4 @@ export function inspectPage(mode,collectionId){
  const publishedDate=typeof metadataDate==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(metadataDate)&&Number.isFinite(Date.parse(metadataDate))?metadataDate:null;
  return {publishedAt:postDates.get(location.pathname.match(/(?:^|\/)(?:[^/]*-)?(\d+)\/?$/)?.[1])||publishedDate||cardDate(document),title,files,images:[...new Set(images)],locked:/join to unlock|unlock this post|this post is locked/i.test(text),ready:!!title};
 }
+
