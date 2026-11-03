@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {readPostPublication} from './publication.mjs';
+let date='2026-10-18T12:00:00+00:00',redirect='https://www.patreon.com/Artist/posts/monthly-123',title='Post',body='';
+globalThis.fetch=async(url,options)=>{assert.equal(url,'/posts/123');assert.equal(options.credentials,'same-origin');assert(options.signal);return {ok:true,url:redirect,text:async()=>'<html>fixture</html>'}};
+globalThis.DOMParser=class{parseFromString(){return {title,body:{textContent:body},querySelector:()=>date?{getAttribute:()=>date}:null}}};
+assert.equal((await readPostPublication('123')).publishedAt,Date.parse(date)/1000);
+date=null;assert.equal((await readPostPublication('123')).publishedAt,null);
+date='yesterday';assert.equal((await readPostPublication('123')).publishedAt,null);
+redirect='https://www.patreon.com/login';await assert.rejects(readPostPublication('123'),/sign-in/);
+redirect='https://www.patreon.com/posts/999';await assert.rejects(readPostPublication('123'),/requested post/);
+redirect='https://www.patreon.com/posts/123';title='Just a moment';await assert.rejects(readPostPublication('123'),/security verification/);
+await assert.rejects(readPostPublication('../123'),/Invalid/);
+console.log('Metadata-only publication lookup, timeout, canonical dates, missing dates, redirects and sign-in/security handling passed');

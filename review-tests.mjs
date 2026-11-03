@@ -12,8 +12,8 @@ const selected=new Runner(api,()=>{},async()=>{});selected.collect=async()=>{thr
 const subset=await selected.run(1,'2088592','Stage',0,{selectedPostIds:['2','2']});assert.equal(subset.noFiles,1);
 await assert.rejects(new Runner(api).run(1,'2088592','Stage',0,{selectedPostIds:['https://bad']}),/Invalid selected post/);
 console.log('Review privacy, attachment identities, selected-only traversal and ID validation passed');
-// Unknown dates remain eligible, while confirmed old posts do not appear.
-const dated=new Runner(api,()=>{},async()=>{});dated.collect=async()=>[1,2,3].map(id=>({id:String(id),url:'https://www.patreon.com/posts/'+id}));
+// Known current dates permit navigation; confirmed old posts do not appear.
+const dated=new Runner(api,()=>{},async()=>{});dated.collect=async()=>[1,2,3].map(id=>({id:String(id),url:'https://www.patreon.com/posts/'+id,publishedAt:id===1?'2020-01-01':'2026-10-12'}));
 dated.openPost=async url=>({title:'Status',files:[],images:[],publishedAt:url.endsWith('1')?'2020-01-01':null,locked:url.endsWith('2')});
 const statuses=await dated.run(1,'2088592','Stage',0,{reviewOnly:true,since:Date.parse('2026-01-01')/1000});assert.deepEqual(statuses.models.map(m=>m.download_state),['locked','no_files']);assert.equal(writes,2); // Only earlier selected no-file run wrote history and lastCollection.
 // Aborted reviews retain already-scanned cards so the bridge can finish them.
@@ -25,3 +25,4 @@ for(const reason of ['stop','login']){
  assert.equal(aborted.reviewStats.models[0].id,'1');assert.equal(aborted.reviewStats.models[0].download_state,'no_files');
  if(reason==='login'){assert.equal(aborted.reviewStats.models[1].download_state,'error');assert.equal(aborted.reviewStats.failed,1)}
 }
+

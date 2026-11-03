@@ -63,14 +63,16 @@ export async function completedStagingFiles(api,history,folder,manifest){
  return [...files.values()];
 }
 export async function runJob(job){
- active=job;let stats=job.mode==='review'?{models:[]}: {},failure=null,ingested={moved_files:0};document.dispatchEvent(new CustomEvent('patreon-bridge-busy',{detail:true}));
+ active=job;let stats=job.mode==='review'?{models:[]}: {},failure=null,ingested={moved_files:0},metadataTab=null;document.dispatchEvent(new CustomEvent('patreon-bridge-busy',{detail:true}));
  try{
   const selected=job.mode==='download'&&Array.isArray(job.selected_posts);
-  const tab=selected?{id:null}:await chrome.tabs.create({url:job.url,active:true});
+  const scopedPost=job.since&&sourceId(job.url).startsWith('post:');
+  const tab=selected?{id:null}:await chrome.tabs.create({url:scopedPost?'https://www.patreon.com/':job.url,active:!scopedPost});
+  if(scopedPost&&!selected)metadataTab=tab.id;
   for(let i=0;!selected&&i<60;i++){await new Promise(r=>setTimeout(r,1000));const t=await chrome.tabs.get(tab.id);if(t.status==='complete')break}
   let lastProgress=0;
   runner=new Runner(chrome,message=>{status(message);if(Date.now()-lastProgress>1000){lastProgress=Date.now();nativeRequest({action:'progress',job_id:job.job_id,message}).then(r=>{if(r.stop)runner&&(runner.stop=true)}).catch(()=>{runner&&(runner.stop=true)})}});
-  stats=await runner.run(tab.id,sourceId(job.url),job.stage,0,{rescan:true,contentRecheck:!!job.content_recheck,known:job.known,since:job.since||null,reviewOnly:job.mode==='review',...(selected?{selectedPostIds:job.selected_posts}:{}),...(job.zip_redownload?{zipRedownload:job.zip_redownload}:{})});
+  stats=await runner.run(tab.id,sourceId(job.url),job.stage,0,{rescan:true,contentRecheck:!!job.content_recheck,known:job.known,since:job.since??null,reviewOnly:job.mode==='review',...(selected?{selectedPostIds:job.selected_posts,publicationDates:job.selected_post_dates||{}}:{}),...(job.zip_redownload?{zipRedownload:job.zip_redownload}:{})});
  }catch(e){if(job.mode==='review')stats=runner?.reviewStats||stats;else stats=runner?.downloadStats||stats;failure=String(e.message||e).replace(/https?:\/\/\S+/g,'[URL removed]');}
  try{
   if(job.mode!=='review'){
@@ -85,19 +87,20 @@ export async function runJob(job){
    while(ingested.pending){status('Moving completed files into Unsorted…');await new Promise(r=>setTimeout(r,1000));ingested=await nativeRequest({action:'ingest-status',job_id:job.job_id});}
   }
   }
-  const stopped=runner?.stop;const state=stopped?'stopped':failure||stats.failed?'failed':'complete';
+  const stopped=runner?.stop;const state=stopped?'stopped':failure||stats.failed?'failed':stats.scope_unresolved?'partial':'complete';
   const message=failure||(job.mode==='review'?`Review finished: ${stats.models?.length||0} posts; ${stats.failed||0} failed.`:`Finished: ${stats.complete||0} posts completed, ${stats.skipped||0} skipped, ${stats.failed||0} failed; ${ingested.moved_files} files moved into Unsorted/${job.designer}.`);
-  await nativeRequest({action:'finish',job_id:job.job_id,status:state,message,result:{...stats,...ingested}});status(message);
+  const scopeMessage=stats.scope_unresolved?`Incomplete date-scoped check: ${stats.scope_unresolved} publication dates could not be verified. `:'';
+  await nativeRequest({action:'finish',job_id:job.job_id,status:state,message:scopeMessage+message,result:{...stats,...ingested}});status(scopeMessage+message);
  }catch(e){if(job.mode==='download'&&Array.isArray(job.selected_posts))stats={...stats,downloaded_post_ids:[],failed_post_ids:[...new Set([...(stats.failed_post_ids||[]),...job.selected_posts])]};status('Completed downloads remain in Chrome’s staging folder: '+e.message);try{await nativeRequest({action:'finish',job_id:job.job_id,status:'failed',message:'File transfer failed: '+e.message,result:stats})}catch{}}
- finally{active=null;runner=null;document.dispatchEvent(new CustomEvent('patreon-bridge-busy',{detail:false}));}
+ finally{if(metadataTab!==null)try{await chrome.tabs.remove(metadataTab)}catch{}active=null;runner=null;document.dispatchEvent(new CustomEvent('patreon-bridge-busy',{detail:false}));}
 }
 async function tick(){
  if(!port)return;
- if(active){if(heartbeatBusy)return;heartbeatBusy=true;try{const result=await nativeRequest({action:'poll',active_job:active.job_id,capabilities:['date_scope','review_results','file_content_recheck','zip_attachments','single_post_sources']});if(result.stop&&runner)runner.stop=true}catch{}finally{heartbeatBusy=false}return}
+ if(active){if(heartbeatBusy)return;heartbeatBusy=true;try{const result=await nativeRequest({action:'poll',active_job:active.job_id,capabilities:['date_scope','review_results','file_content_recheck','zip_attachments','single_post_sources','strict_date_scope']});if(result.stop&&runner)runner.stop=true}catch{}finally{heartbeatBusy=false}return}
  if(polling)return;polling=true;
  try{
   await navigator.locks.request('duck-vault-downloader',{ifAvailable:true},async lock=>{
-   if(!lock)return;const reply=await nativeRequest({action:'poll',capabilities:['date_scope','review_results','file_content_recheck','zip_attachments','single_post_sources']});
+   if(!lock)return;const reply=await nativeRequest({action:'poll',capabilities:['date_scope','review_results','file_content_recheck','zip_attachments','single_post_sources','strict_date_scope']});
    if(reply.job)await runJob(reply.job);else status('Connected. Start a Patreon scan from the designer’s download sources in 3DHub.');
   });
  }catch(e){status(e.message)}finally{polling=false}
@@ -108,4 +111,5 @@ if(typeof document!=='undefined'){
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&reconnectEnabled){if(!port)connect();else tick();}});
  // The background worker delivers bridge_tick events even while this tab is hidden.
 }
+
 
