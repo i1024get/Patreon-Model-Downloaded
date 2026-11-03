@@ -28,7 +28,7 @@ export function downloadResources(post,id,folder){
  });
  if(resources.length&&post.images.length){
   const u=new URL(post.images[0]);if(u.protocol!=='https:'||!(u.hostname.endsWith('.patreonusercontent.com')||u.hostname.endsWith('.patreon.com')||u.hostname==='www.patreon.com'))throw Error('Gallery image host is not Patreon');
-  const ext=u.pathname.match(/\.(png|jpe?g|webp|avif)(?:$|\/)/i)?.[1]?.toLowerCase()||'jpg';
+  const ext=u.pathname.match(/\.(png|jpe?g|webp|avif|gif)(?:$|\/)/i)?.[1]?.toLowerCase()||'jpg';
   resources.push({key:'image',kind:'image',url:u.href,filename:resources[0].filename.replace(/\.(3mf|zip)$/i,'.'+ext)});
  }
  return resources;
