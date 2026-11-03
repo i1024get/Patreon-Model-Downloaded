@@ -25,3 +25,24 @@ dashboard and reconnect. Confirm version 1.7.1 and run a fresh scoped check.
 Run all offline checks with `for test in *tests.mjs; do node "$test" || exit 1; done`.
 Live Patreon validation is still required: fixtures verify the supported Flight
 formats, not the current markup of every creator feed.
+
+## Relative listing labels (v1.7.2)
+
+Rendered creator feeds can expose publication dates only as `Yesterday` or
+`4 days ago`, without a precise timestamp on the publication link. After the
+existing hydration retries, scoped feeds now use the same metadata-only HTML
+lookup already used by individual post sources. Scoped collections use it after
+listing enumeration. The lookup reads the requested post's canonical publication
+metadata without navigating to the post or inspecting attachments.
+
+Each unresolved post is attempted once per run, with a maximum of 40 metadata
+requests and the existing 15-second request timeout. Known dates need no lookup.
+A missing/failed lookup remains unresolved and prevents expanding an undated feed
+boundary. Sign-in/security failures stop the scan. All time remains unchanged.
+Only an exact, verified timestamp can pass the rolling cutoff; relative labels
+are not converted to invented precise timestamps.
+
+Regression tests cover feed and collection resolution, older/unknown exclusion,
+partial counts, stop/security behavior, request caching/budget, and All time.
+The rendered feed establishes the missing listing metadata; signed-in validation
+of the metadata-only post response remains necessary after installation.
