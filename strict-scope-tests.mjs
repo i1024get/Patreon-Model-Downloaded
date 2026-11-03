@@ -5,7 +5,7 @@ const recent='2026-11-01T12:00:00Z',old='2026-10-18T12:00:00Z';
 const link=(id,date)=>({url:'https://www.patreon.com/posts/'+id,publishedAt:date});
 function fixture(links,kind='feed:/c/D/posts'){
  const opened=[],modes=[];
- const api={storage:{local:{get:async()=>({}),set:async()=>{}}},tabs:{remove:async()=>{}},scripting:{executeScript:async()=>[{result:{publishedAt:old}}]}};
+ const api={storage:{local:{get:async()=>({}),set:async()=>{}}},tabs:{remove:async()=>{}},scripting:{executeScript:async()=>[{result:{publishedAt:kind.startsWith('post:')?old:null}}]}};
  const r=new Runner(api,()=>{},async()=>{});
  r.read=async(_,mode)=>{modes.push(mode);return {newestFirst:true,loading:false,more:false,expected:links.length,links}};
  r.openPost=async url=>{opened.push(url);return {title:'Post',publishedAt:url.endsWith('/1')?recent:old,files:[],images:[]}};

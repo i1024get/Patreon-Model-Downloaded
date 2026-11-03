@@ -42,6 +42,32 @@ export class Runner{
   }
   return scopePosts(posts,options);
  }
+ async resolveListingDates(tabId,posts){
+  this.publicationLookups??=new Map();
+  for(const post of posts){
+   this.assertRunning();
+   const id=post.id||postId(post.url);
+   if(!id||postDateSeconds(post.publishedAt)!==null)continue;
+   if(!this.publicationLookups.has(id)){
+    // A bounded metadata-only fallback for relative/date-only listing labels.
+    // No post navigation, attachment reads or downloads happen here.
+    if(this.publicationLookups.size>=40)continue;
+    this.notify('Verifying publication metadata for post '+id);
+    let date=null;
+    try{
+     const result=await this.api.scripting.executeScript({target:{tabId},func:readPostPublication,args:[id]});
+     date=postDateSeconds(result[0]?.result?.publishedAt);
+    }catch(error){
+     const message=String(error.message||error).replace(/https?:\/\/\S+/g,'[URL removed]');
+     if(/security verification|sign-in is required/i.test(message)){this.preserveWorker=true;throw error;}
+     this.notify('Publication metadata unavailable for post '+id+': '+message);
+    }
+    this.publicationLookups.set(id,date);
+    this.assertRunning();
+   }
+   post.publishedAt=this.publicationLookups.get(id)??null;
+  }
+ }
  scopeCounts(){return this.scopedRun?{scope_unresolved:this.scopeUnknown?.size||0,scope_excluded:this.scopeOld?.size||0}:{};}
  assertRunning(){if(this.stop)throw Error('Stopped. Progress is saved; click Start / Resume to continue.')}
  async read(tabId,mode,id){
@@ -68,10 +94,15 @@ export class Runner{
     // Allow listing metadata to hydrate, but never open undated posts or
     // scroll an unverified boundary into weeks of historical cards.
     if(dateWaits++<3){this.notify('Waiting for publication dates in Patreon listing metadata…');await this.sleep(1000);continue;}
-    this.notify('Incomplete date-scoped check: some listing dates could not be verified. Use All time to inspect undated posts.');
-    return this.filterScope([...posts.values()],options);
+    await this.resolveListingDates(tabId,[...posts.values()]);
+    if(state.links.some(link=>!link.pinned&&postDateSeconds(posts.get(postId(link.url))?.publishedAt)===null)){
+     this.notify('Incomplete date-scoped check: some listing dates could not be verified after metadata lookup.');
+     return this.filterScope([...posts.values()],options);
+    }
    }
    dateWaits=0;
+   if(options.since&&state.links.some(link=>link.pinned&&postDateSeconds(posts.get(postId(link.url))?.publishedAt)===null))
+    await this.resolveListingDates(tabId,[...posts.values()]);
    const datedState={...state,links:state.links.map(link=>({...link,publishedAt:posts.get(postId(link.url))?.publishedAt||link.publishedAt}))};
    if(scopeBoundary(datedState,options)){this.notify('Reached the date cutoff; older feed posts will not be loaded.');return this.filterScope([...posts.values()],options);}
    if(!posts.size){if(++empty>=60)throw Error('No creator post cards found after 60 seconds. Keep the feed open and check that posts are visible.');}
@@ -112,6 +143,7 @@ export class Runner{
      if(posts.size<expected)throw Error(`Only ${posts.size} of ${expected} posts found. Downloads have not started.`);
     }
     if(!posts.size)throw Error('No collection posts found. Open the collection and wait until its cards appear.');
+    if(options.since)await this.resolveListingDates(tabId,[...posts.values()]);
     return this.filterScope([...posts.values()],options);
    }
    const before=posts.size;
@@ -195,7 +227,7 @@ export class Runner{
  async run(collectionTab,collectionId,folder,limit=0,options={}){
   if(collectionId.startsWith('post:'))options={...options,rescan:true};
   if(options.since!=null&&(!Number.isFinite(options.since)||options.since<=0))throw Error('Invalid date scope cutoff');
-  this.scopeUnknown=new Set();this.scopeOld=new Set();
+  this.scopeUnknown=new Set();this.scopeOld=new Set();this.publicationLookups=new Map();
   this.scopedRun=options.since!=null;
   this.reviewStats=options.reviewOnly?{complete:0,skipped:0,failed:0,noFiles:0,models:[]}:null;
   const stored=await this.api.storage.local.get('history');this.history=stored.history||{version:1,posts:{}};
