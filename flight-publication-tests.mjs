@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {inspectPage} from './core.mjs';
+import {Runner} from './runner.mjs';
+const date='2026-11-02T12:00:00Z';
+const post=(id,published_at)=>({type:'post',id,attributes:{published_at}});
+const payload=JSON.stringify({title:'Gnomes 🎄',data:[post('123',date),post('124','2026-10-18T12:00:00Z')]},null,2);
+const script=chunk=>({textContent:'self.__next_f.push('+JSON.stringify([1,chunk])+')'});
+let scripts=[];
+const card={querySelector:()=>null,innerText:'Post',querySelectorAll:()=>[anchor]};
+const anchor={href:'https://www.patreon.com/posts/123',textContent:'Post',closest:()=>card};
+globalThis.location={pathname:'/c/Designer/posts'};
+globalThis.document={title:'Feed',body:{innerText:''},querySelector:()=>null,querySelectorAll:selector=>{
+ if(selector==='script:not([src])')return scripts;
+ if(selector==='[data-tag="post-card"]')return [card];
+ if(selector.startsWith('select option'))return [{textContent:'Newest first'}];
+ return [];
+}};
+const read=()=>inspectPage('feed','feed:/c/Designer/posts');
+// Flight T records are byte-length framed and can contain newlines / Unicode.
+const textRecord='a:T'+new TextEncoder().encode(payload).length.toString(16)+','+payload;
+scripts=[script(textRecord)];
+assert.equal(read().links[0].publishedAt,date,'extract listing dates from a Flight text record');
+// Neither half contains a complete JSON record (or even the entire key).
+const jsonRecord='b:'+JSON.stringify(JSON.parse(payload))+'\n';
+const split=jsonRecord.indexOf('published_at')+5;
+scripts=[script(jsonRecord.slice(0,split)),script(jsonRecord.slice(split))];
+assert.equal(read().links[0].publishedAt,date,'reassemble JSON across Flight scripts');
+scripts=[script(textRecord.slice(0,split)),script(textRecord.slice(split))];
+assert.equal(read().links[0].publishedAt,date,'reassemble text records across scripts');
+scripts=[script('a:T'+new TextEncoder().encode(payload).length.toString(16)+','+payload+'c:'+JSON.stringify(post('999','2026-11-03T12:00:00Z'))+'\n')];
+assert.equal(read().links[0].publishedAt,date,'associate dates by exact post ID, not record proximity');
+const runner=new Runner({},()=>{},async()=>{});
+runner.read=async()=>read();
+assert.deepEqual((await runner.collectFeed(1,'feed:/c/Designer/posts',{since:Date.parse('2026-11-01')/1000})).map(p=>p.id),['123']);
+assert.equal(runner.scopeCounts().scope_unresolved,0,'recovered dates must not report incomplete scope');
+scripts=[script('a:Tffff,'+payload)];
+assert.equal(read().links[0].publishedAt,null,'truncated records remain unresolved');
+scripts=[script('a:'+JSON.stringify(post('999',date))+'\n')];
+assert.equal(read().links[0].publishedAt,null,'another post date must never leak onto this card');
+scripts=[script('a:'+JSON.stringify(post('123','November 2, 2026'))+'\n')];
+assert.equal(read().links[0].publishedAt,null,'date-only values remain unresolved');
+console.log('Flight text, split chunks, Unicode byte lengths, scoped collection, and unresolved safeguards passed');

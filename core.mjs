@@ -38,21 +38,45 @@ export function inspectPage(mode,collectionId){
  const text=document.body?.innerText||'';
  const preciseDate=value=>typeof value==='string'&&/\b\d{4}\b/.test(value)&&/\d{1,2}:\d{2}/.test(value)&&Number.isFinite(Date.parse(value))?value.trim():null;
  const postDates=new Map();let visited=0;
- const visit=value=>{
-  if(++visited>50000||!value||typeof value!=='object')return;
+ const visit=(value,depth=0)=>{
+  if(++visited>50000||depth>100||!value||typeof value!=='object')return;
   if(value.type==='post'&&value.id&&preciseDate(value.attributes?.published_at))postDates.set(String(value.id),preciseDate(value.attributes.published_at));
-  for(const child of Object.values(value))if(child&&typeof child==='object')visit(child);
+  for(const child of Object.values(value))if(child&&typeof child==='object')visit(child,depth+1);
  };
+ const parse=raw=>{try{visit(JSON.parse(raw));}catch(e){}};
+ // Flight records can span push calls. Keep every type-1 chunk, including
+ // chunks without published_at, before decoding the record stream.
+ const chunks=[];
  for(const script of document.querySelectorAll('script:not([src])')){
-  const raw=script.textContent||'';if(!raw.includes('published_at'))continue;
+  const raw=script.textContent||'';
   try{
-   if(script.type==='application/json'){visit(JSON.parse(raw));continue;}
+   if(script.type==='application/json'){if(raw.includes('published_at'))parse(raw);continue;}
    const match=raw.match(/self\.__next_f\.push\(([\s\S]*)\)\s*;?\s*$/);if(!match)continue;
-   for(const chunk of JSON.parse(match[1]))if(typeof chunk==='string')for(const record of chunk.split('\n')){
-    const body=record.slice(record.indexOf(':')+1);if(!/^[\[{]/.test(body))continue;
-    try{visit(JSON.parse(body));}catch(e){}
-   }
+   const entry=JSON.parse(match[1]);
+   if(entry[0]===1&&typeof entry[1]==='string')chunks.push(entry[1]);
   }catch(e){}
+ }
+ // T records use UTF-8 byte lengths rather than JS character counts. Their
+ // payload may contain newlines and need not end at a newline boundary.
+ const bytes=new TextEncoder().encode(chunks.join('')),decoder=new TextDecoder();
+ let offset=0;
+ while(offset<bytes.length){
+  const colon=bytes.indexOf(58,offset);if(colon<0)break;
+  if(!/^[0-9a-f]+$/i.test(decoder.decode(bytes.subarray(offset,colon))))break;
+  let start=colon+1,end;
+  if(bytes[start]===84){
+   const comma=bytes.indexOf(44,start+1);if(comma<0)break;
+   const length=decoder.decode(bytes.subarray(start+1,comma));
+   if(!/^[0-9a-f]+$/i.test(length))break;
+   start=comma+1;end=start+parseInt(length,16);
+   if(end>bytes.length)break;
+   parse(decoder.decode(bytes.subarray(start,end)));offset=end;
+  }else{
+   end=bytes.indexOf(10,start);if(end<0)end=bytes.length;
+   const body=decoder.decode(bytes.subarray(start,end));
+   if(/^[\[{]/.test(body))parse(body);
+   offset=end+1;
+  }
  }
  const cardDate=card=>{
   if(!card)return null;
