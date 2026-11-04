@@ -11,8 +11,10 @@ const dated=new Runner({},()=>{},async()=>{});
 dated.read=async()=>({newestFirst:true,loading:false,more:true,links:links.map(p=>({...p,publishedAt:p.url.endsWith('/3')?'2026-10-12T12:00:00Z':'2026-10-01T12:00:00Z'}))});
 assert.deepEqual((await dated.collectFeed(1,'feed:/c/D/posts',{since})).map(p=>p.id),['3']);
 const unordered=new Runner({},()=>{},async()=>{});unordered.read=async()=>({newestFirst:false,links,more:true,loading:false});
-await assert.rejects(unordered.collectFeed(1,'feed:/c/D/posts',{since}),/Cannot verify newest-first/);
+assert.deepEqual(await unordered.collectFeed(1,'feed:/c/D/posts',{since}),[]);
+assert.equal(unordered.scopeCounts().scope_unresolved,4);
 const paged=new Runner({},()=>{},async()=>{});let page=0;
 paged.read=async(_,mode)=>{if(mode==='feedAdvance'){page++;return {}};return {newestFirst:true,loading:false,more:true,links:page?[{url:'https://www.patreon.com/posts/2',publishedAt:'2026-10-02T12:00:00Z'},{url:'https://www.patreon.com/posts/1',publishedAt:'2026-10-01T12:00:00Z'}]:[{url:'https://www.patreon.com/posts/5',publishedAt:'2026-10-12T12:00:00Z'},{url:'https://www.patreon.com/posts/4',publishedAt:'2026-10-11T12:00:00Z'}]}};
 assert.deepEqual((await paged.collectFeed(1,'feed:/c/D/posts',{since})).map(p=>p.id),['5','4']);assert.equal(page,1);
 console.log('Strict listing dates, no old-post probes, verified ordering and bounded feed pagination passed');
+

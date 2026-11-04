@@ -84,8 +84,8 @@ export function inspectPage(mode,collectionId){
   const value=time?.getAttribute?.('datetime')||time?.getAttribute?.('data-published-at')||time?.getAttribute?.('title')||time?.textContent||'';
   return preciseDate(value);
  };
- const linkInfo=a=>{const card=a.closest?.('[data-tag="post-card"]');return {url:a.href,title:a.innerText||a.textContent||'',publishedAt:postDates.get(a.href.match(/(?:^|\/)(?:[^/]*-)?(\d+)(?:[?/#]|$)/)?.[1])||cardDate(card)||null,pinned:!!card&&(!!card.querySelector?.('[aria-label*="Pinned"], [title*="Pinned"]')||/^pinned\b/i.test(card.innerText?.trim()||''))};};
- const newestFirst=[...document.querySelectorAll('select option:checked, [aria-selected="true"], [aria-checked="true"], button[aria-haspopup], [data-tag="posts-sort-button"]')].some(el=>/^(newest|newest first|most recent)$/i.test(el.textContent.trim()));
+ const linkInfo=a=>{const card=a.closest?.('[data-tag="post-card"]');return {url:a.href,title:a.innerText||a.textContent||'',publishedAt:postDates.get(a.href.match(/(?:^|\/)(?:[^/]*-)?(\d+)(?:[?/#]|$)/)?.[1])||cardDate(card)||null,pinned:!!card&&(!!card.querySelector?.('[aria-label*="pinned" i], [title*="pinned" i], [data-tag*="pinned" i], [data-testid*="pinned" i]')||/^pinned\b/i.test(card.innerText?.trim()||''))};};
+ const newestFirst=[...document.querySelectorAll('select option:checked, [aria-selected="true"], [aria-checked="true"], button[aria-haspopup], [data-tag="posts-sort-button"]')].some(el=>[el.getAttribute?.('aria-label'),el.textContent].some(label=>/^(?:sort(?: posts)?(?: by)?[ :–-]*)?(?:newest(?: first)?|most recent)(?:[\s▾▼⌄]*)$/i.test((label||'').trim())));
 
  const blocked=/just a moment/i.test(document.title)||/performing security verification|verify you are human|checking your browser/i.test(text.slice(0,6000));
  const login=location.pathname.startsWith('/login');
@@ -128,5 +128,6 @@ export function inspectPage(mode,collectionId){
  const publishedDate=typeof metadataDate==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(metadataDate)&&Number.isFinite(Date.parse(metadataDate))?metadataDate:null;
  return {publishedAt:postDates.get(location.pathname.match(/(?:^|\/)(?:[^/]*-)?(\d+)\/?$/)?.[1])||publishedDate||cardDate(document),title,files,images:[...new Set(images)],locked:/join to unlock|unlock this post|this post is locked/i.test(text),ready:!!title};
 }
+
 
 

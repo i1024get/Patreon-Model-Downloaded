@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {readPostPublication} from './publication.mjs';
+const published='2026-11-04T10:00:00Z';
+let scripts=[{type:'application/json',textContent:JSON.stringify({data:{type:'post',id:'123',attributes:{published_at:published}}})}];
+globalThis.fetch=async()=>({ok:true,url:'https://www.patreon.com/posts/123',text:async()=>'<html/>'});
+globalThis.DOMParser=class{parseFromString(){return {title:'Post',body:{textContent:'3 hours ago'},querySelector:()=>null,querySelectorAll:()=>scripts}}};
+assert.equal((await readPostPublication('123')).publishedAt,Date.parse(published)/1000);
+const flight='1:'+JSON.stringify({type:'post',id:'123',attributes:{published_at:published}})+'\n';
+scripts=[{textContent:'self.__next_f.push('+JSON.stringify([1,flight])+')'}];
+assert.equal((await readPostPublication('123')).publishedAt,Date.parse(published)/1000);
+scripts=[{type:'application/json',textContent:JSON.stringify({type:'post',id:'999',attributes:{published_at:published}})}];
+assert.equal((await readPostPublication('123')).publishedAt,null,'never borrow another post timestamp');
+console.log('Hour labels use exact publication metadata from JSON and Flight, isolated by post ID');
