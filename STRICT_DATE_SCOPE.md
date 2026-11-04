@@ -46,3 +46,14 @@ Regression tests cover feed and collection resolution, older/unknown exclusion,
 partial counts, stop/security behavior, request caching/budget, and All time.
 The rendered feed establishes the missing listing metadata; signed-in validation
 of the metadata-only post response remains necessary after installation.
+
+
+## Feed cleanup and relative-hour metadata (v1.7.4)
+
+Automation-created source tabs close after a job finishes, including ordinary failures and stopped jobs. Sign-in/security-verification tabs remain available for intervention. Existing user tabs are not closed.
+
+For relative hour/day labels, the metadata-only lookup now reads exact published_at timestamps from JSON and Next.js Flight data when the HTML publication meta tag is absent. Unknown dates still produce an incomplete check; they are never estimated from relative text.
+
+Pinned indicators are recognized case-insensitively, including data-tag/data-testid markers. Sort controls can include “Sort by: Newest first.” If no explicit sort is exposed, the scanner traverses the listing without using an early cutoff; only posts with verified in-scope timestamps are opened. This can take longer than a feed with a readable newest-first control.
+
+Reload extension v1.7.4, reopen the dashboard, reconnect and run a new job. The companion 3DHub change treats saved individual post sources as rolling attachment hubs: their current attachments are checked regardless of the global publication-date window. Save FlexiTown’s monthly download post as an individual source; a creator feed alone cannot discover edits on an old post reliably. Known ZIPs stay downloaded and new attachment identities are discovered individually.

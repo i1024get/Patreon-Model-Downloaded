@@ -85,10 +85,11 @@ export class Runner{
    this.notify(`Loading creator feed: ${posts.size} posts`);
    if(options.since&&posts.size&&!state.newestFirst&&!state.loading){
     // Newly opened automation tabs can render cards before the sort control.
-    // Re-read in place; never paginate or infer ordering while it is unknown.
-    if(orderWaits++>=10)throw Error('Cannot verify newest-first ordering for this scoped feed. Choose Newest first on Patreon and retry, or use Full scan.');
-    this.notify('Waiting for Patreon feed ordering to finish loading…');
-    await this.sleep(1000);continue;
+    // Give the control time to hydrate before using the full-listing fallback.
+    if(orderWaits++<3){this.notify('Waiting for Patreon feed ordering to finish loading…');await this.sleep(1000);continue;}
+    // Without an explicit sort control, inspect the whole listing rather than
+    // failing or assuming a cutoff is safe. Post date gates remain mandatory.
+    if(orderWaits===4)this.notify('Feed sort is not exposed; checking listing without an early date cutoff.');
    }
    if(options.since&&!state.loading&&state.links.some(link=>!link.pinned&&postDateSeconds(posts.get(postId(link.url))?.publishedAt)===null)){
     // Allow listing metadata to hydrate, but never open undated posts or
@@ -305,6 +306,7 @@ export class Runner{
   }
  }
 }
+
 
 
 

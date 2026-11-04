@@ -63,12 +63,12 @@ export async function completedStagingFiles(api,history,folder,manifest){
  return [...files.values()];
 }
 export async function runJob(job){
- active=job;let stats=job.mode==='review'?{models:[]}: {},failure=null,ingested={moved_files:0},metadataTab=null;document.dispatchEvent(new CustomEvent('patreon-bridge-busy',{detail:true}));
+ active=job;let stats=job.mode==='review'?{models:[]}: {},failure=null,ingested={moved_files:0},sourceTab=null;document.dispatchEvent(new CustomEvent('patreon-bridge-busy',{detail:true}));
  try{
   const selected=job.mode==='download'&&Array.isArray(job.selected_posts);
   const scopedPost=job.since&&sourceId(job.url).startsWith('post:');
   const tab=selected?{id:null}:await chrome.tabs.create({url:scopedPost?'https://www.patreon.com/':job.url,active:!scopedPost});
-  if(scopedPost&&!selected)metadataTab=tab.id;
+  if(!selected)sourceTab=tab.id;
   for(let i=0;!selected&&i<60;i++){await new Promise(r=>setTimeout(r,1000));const t=await chrome.tabs.get(tab.id);if(t.status==='complete')break}
   let lastProgress=0;
   runner=new Runner(chrome,message=>{status(message);if(Date.now()-lastProgress>1000){lastProgress=Date.now();nativeRequest({action:'progress',job_id:job.job_id,message}).then(r=>{if(r.stop)runner&&(runner.stop=true)}).catch(()=>{runner&&(runner.stop=true)})}});
@@ -92,7 +92,7 @@ export async function runJob(job){
   const scopeMessage=stats.scope_unresolved?`Incomplete date-scoped check: ${stats.scope_unresolved} publication dates could not be verified. `:'';
   await nativeRequest({action:'finish',job_id:job.job_id,status:state,message:scopeMessage+message,result:{...stats,...ingested}});status(scopeMessage+message);
  }catch(e){if(job.mode==='download'&&Array.isArray(job.selected_posts))stats={...stats,downloaded_post_ids:[],failed_post_ids:[...new Set([...(stats.failed_post_ids||[]),...job.selected_posts])]};status('Completed downloads remain in Chrome’s staging folder: '+e.message);try{await nativeRequest({action:'finish',job_id:job.job_id,status:'failed',message:'File transfer failed: '+e.message,result:stats})}catch{}}
- finally{if(metadataTab!==null)try{await chrome.tabs.remove(metadataTab)}catch{}active=null;runner=null;document.dispatchEvent(new CustomEvent('patreon-bridge-busy',{detail:false}));}
+ finally{if(sourceTab!==null&&!runner?.preserveWorker&&!/security verification|sign-in is required/i.test(failure||''))try{await chrome.tabs.remove(sourceTab)}catch{}active=null;runner=null;document.dispatchEvent(new CustomEvent('patreon-bridge-busy',{detail:false}));}
 }
 async function tick(){
  if(!port)return;
@@ -111,5 +111,6 @@ if(typeof document!=='undefined'){
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&reconnectEnabled){if(!port)connect();else tick();}});
  // The background worker delivers bridge_tick events even while this tab is hidden.
 }
+
 
 

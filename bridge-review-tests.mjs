@@ -69,3 +69,15 @@ await bridge.runJob({job_id:'scoped-selection',url:'https://www.patreon.com/coll
 assert.equal(options.since,123);assert.deepEqual(options.publicationDates,{'1':124});assert.deepEqual(options.selectedPostIds,['1']);
 console.log('Scoped single-post source avoids target navigation and unresolved dates finish as partial');
 
+
+
+// Close only the automation-owned source tab; preserve authentication tabs.
+Runner.prototype.run=async()=>({models:[],failed:0});
+closedTabs.length=0;
+await bridge.runJob({job_id:'close-feed',url:'https://www.patreon.com/c/Artist/posts',stage:'Stage',mode:'review'});
+assert.deepEqual(closedTabs,[42]);
+Runner.prototype.run=async function(){this.preserveWorker=true;throw Error('Patreon sign-in is required')};
+closedTabs.length=0;
+await bridge.runJob({job_id:'keep-login',url:'https://www.patreon.com/c/Artist/posts',stage:'Stage',mode:'review'});
+assert.deepEqual(closedTabs,[]);
+console.log('Automation feed tabs close at completion; sign-in tabs remain open');

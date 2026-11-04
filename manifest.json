@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Patreon Model Downloader",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "description": "Download Patreon 3MF and ZIP attachments using your Chrome session. Completed ZIPs require an explicit re-download.",
   "permissions": [
     "scripting",
@@ -19,5 +19,6 @@
     "service_worker": "background.js"
   }
 }
+
 
 
