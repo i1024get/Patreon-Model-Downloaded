@@ -1,3 +1,9 @@
+## 1.7.5 — security detection correction
+
+Normal creator text containing security phrases no longer triggers a blocked-page error. Temporary verification screens get up to 30 seconds to clear in the same tab. If verification persists, the run stops and keeps the tab open for you to complete it manually, then retry. Stop remains available during the wait. Publication metadata uses the same stricter detection. No automatic challenge solving or page reloads are performed.
+
+Update your existing checkout, reload the unpacked extension in `chrome://extensions`, then reopen and reconnect its dashboard. This preserves download history. Offline regression tests cover false alarms, temporary and persistent verification, Stop, sign-in, and metadata extraction; live signed-in Patreon behavior still requires a check on your computer.
+
 # Patreon Model Downloader — Chrome extension
 
 ## ZIP attachments (v1.5.0)
