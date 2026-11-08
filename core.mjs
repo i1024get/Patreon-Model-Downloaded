@@ -87,7 +87,12 @@ export function inspectPage(mode,collectionId){
  const linkInfo=a=>{const card=a.closest?.('[data-tag="post-card"]');return {url:a.href,title:a.innerText||a.textContent||'',publishedAt:postDates.get(a.href.match(/(?:^|\/)(?:[^/]*-)?(\d+)(?:[?/#]|$)/)?.[1])||cardDate(card)||null,pinned:!!card&&(!!card.querySelector?.('[aria-label*="pinned" i], [title*="pinned" i], [data-tag*="pinned" i], [data-testid*="pinned" i]')||/^pinned\b/i.test(card.innerText?.trim()||''))};};
  const newestFirst=[...document.querySelectorAll('select option:checked, [aria-selected="true"], [aria-checked="true"], button[aria-haspopup], [data-tag="posts-sort-button"]')].some(el=>[el.getAttribute?.('aria-label'),el.textContent].some(label=>/^(?:sort(?: posts)?(?: by)?[ :–-]*)?(?:newest(?: first)?|most recent)(?:[\s▾▼⌄]*)$/i.test((label||'').trim())));
 
- const blocked=/just a moment/i.test(document.title)||/performing security verification|verify you are human|checking your browser/i.test(text.slice(0,6000));
+ // Security words can occur in a creator's title/body. Only classify a
+ // dedicated interstitial, not a normal post or feed containing those words.
+ const hasContent=document.querySelectorAll('h1[data-tag="post-title"]').length>0||document.querySelectorAll('[data-tag="post-card"]').length>0;
+ const challengeTitle=/^just a moment(?:\.{3}|…)?\s*$/i.test(document.title.trim());
+ const challengeText=/^(?:performing security verification|verify you are human|checking your browser)\b/i.test(text.trim())&&text.length<2000;
+ const blocked=!!document.querySelector?.('#challenge-form, #challenge-running')||(!hasContent&&(challengeTitle||challengeText));
  const login=location.pathname.startsWith('/login');
  if(blocked)return {blocked:true};if(login)return {login:true};
  if(mode==='feed'||mode==='feedAdvance'){

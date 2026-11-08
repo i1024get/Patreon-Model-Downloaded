@@ -9,7 +9,11 @@ export async function readPostPublication(id){
  const resolved=url.pathname.match(/^\/(?:(?:(?:c|cw)\/)?[A-Za-z0-9_.-]+\/)?posts\/(?:[A-Za-z0-9_.-]+-)?([1-9][0-9]{0,29})\/?$/)?.[1];
  if(resolved!==String(id))throw Error('Publication metadata redirected away from the requested post');
  const doc=new DOMParser().parseFromString(await response.text(),'text/html');
- if(/just a moment/i.test(doc.title)||/verify you are human|checking your browser/i.test((doc.body?.textContent||'').slice(0,6000)))throw Error('Patreon security verification blocked publication metadata');
+ const text=(doc.body?.textContent||'').trim();
+ const hasContent=(doc.querySelectorAll?.('h1[data-tag="post-title"]')||[]).length>0||(doc.querySelectorAll?.('[data-tag="post-card"]')||[]).length>0;
+ const challengeTitle=/^just a moment(?:\.{3}|…)?\s*$/i.test(doc.title.trim());
+ const challengeText=/^(?:performing security verification|verify you are human|checking your browser)\b/i.test(text)&&text.length<2000;
+ if(doc.querySelector?.('#challenge-form, #challenge-running')||(!hasContent&&(challengeTitle||challengeText)))throw Error('Patreon security verification blocked publication metadata');
  const raw=doc.querySelector('meta[property="article:published_time"]')?.getAttribute('content');
  const date=typeof raw==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(raw)?Date.parse(raw):NaN;
  if(Number.isFinite(date))return {publishedAt:date/1000};

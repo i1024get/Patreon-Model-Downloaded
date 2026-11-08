@@ -71,11 +71,21 @@ export class Runner{
  scopeCounts(){return this.scopedRun?{scope_unresolved:this.scopeUnknown?.size||0,scope_excluded:this.scopeOld?.size||0}:{};}
  assertRunning(){if(this.stop)throw Error('Stopped. Progress is saved; click Start / Resume to continue.')}
  async read(tabId,mode,id){
-  const results=await this.api.scripting.executeScript({target:{tabId},func:inspectPage,args:[mode,id]});const state=results[0]?.result;
-  if(!state)throw Error('Could not read the Patreon page');
-  if(state.blocked){this.preserveWorker=true;throw Error('Patreon security verification blocked this tab. Stopped.');}
-  if(state.login){this.preserveWorker=true;throw Error('Patreon sign-in is required in your regular Chrome. Stopped.');}
-  return state;
+  // A newly opened background tab may briefly show an interstitial that
+  // clears itself. Wait in this same tab without reloading or bypassing it.
+  for(let attempt=0;attempt<=30;attempt++){
+   this.assertRunning();
+   const results=await this.api.scripting.executeScript({target:{tabId},func:inspectPage,args:[mode,id]});const state=results[0]?.result;
+   if(!state)throw Error('Could not read the Patreon page');
+   if(state.login){this.preserveWorker=true;throw Error('Patreon sign-in is required in your regular Chrome. Stopped.');}
+   if(!state.blocked){this.preserveWorker=false;return state;}
+   // Keep the tab available even when the user presses Stop while waiting.
+   this.preserveWorker=true;
+   if(attempt===30)throw Error('Patreon security verification is still present after 30 seconds. Open the retained Patreon tab, complete any verification, then retry.');
+   if(attempt===0)this.notify('Waiting up to 30 seconds for Patreon security verification to clear…');
+   await this.sleep(1000);
+   this.assertRunning();
+  }
  }
  async collectFeed(tabId,id,options={}){
   const posts=new Map();let idle=0,empty=0,orderWaits=0,dateWaits=0;
